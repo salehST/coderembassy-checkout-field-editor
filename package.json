@@ -1,0 +1,23 @@
+{
+  "name": "checkout-architect",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "wp-scripts build",
+    "start": "wp-scripts start"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@wordpress/api-fetch": "^7.31.0",
+    "@wordpress/components": "^28.12.0",
+    "@wordpress/data": "^10.12.0",
+    "@wordpress/element": "^6.12.0",
+    "@wordpress/i18n": "^5.12.0",
+    "@wordpress/scripts": "^30.14.0"
+  },
+  "devDependencies": {
+    "ajv": "^8.18.0",
+    "ajv-keywords": "^5.1.0"
+  }
+}

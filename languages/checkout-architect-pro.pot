@@ -1,0 +1,16 @@
+Copyright (C) 2025 CoderEmbassy
+This file is distributed under the same license as the Checkout Architect Pro plugin.
+msgid ""
+msgstr ""
+"Project-Id-Version: Checkout Architect Pro 1.0.0\n"
+"Report-Msgid-Bugs-To: https://coderembassy.com/support\n"
+"POT-Creation-Date: 2025-01-01 00:00+0000\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"PO-Revision-Date: 2025-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME EMAIL@ADDRESS\n"
+"Language-Team: LANGUAGE LL@li.org\n"
+"X-Generator: Checkout Architect Pro\n"
+"Domain: checkout-architect-pro\n"
+
