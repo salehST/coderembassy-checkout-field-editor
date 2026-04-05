@@ -30,16 +30,16 @@ $cecfe_tables = array(
 	$wpdb->prefix . 'ca_revisions',
 );
 foreach ( $cecfe_tables as $cecfe_table ) {
-	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.DirectDatabaseQuery.NoCaching -- Safe: table names are built with $wpdb->prefix and hardcoded strings.
 	$wpdb->query( "DROP TABLE IF EXISTS {$cecfe_table}" );
 }
 
 // Clear scheduled cron.
-// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
-$cecfe_timestamp = wp_next_scheduled( 'ca_daily_license_check' );
-if ( $cecfe_timestamp ) {
-	// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
-	wp_unschedule_event( $cecfe_timestamp, 'ca_daily_license_check' );
+$cecfe_cron_hooks = array( 'cecfe_daily_license_check', 'ca_daily_license_check' );
+foreach ( $cecfe_cron_hooks as $hook ) {
+	$cecfe_timestamp = wp_next_scheduled( $hook );
+	if ( $cecfe_timestamp ) {
+		wp_unschedule_event( $cecfe_timestamp, $hook );
+	}
 }
 

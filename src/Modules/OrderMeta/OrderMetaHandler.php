@@ -42,6 +42,13 @@ class OrderMetaHandler {
 				return;
 			}
 
+			$nonce_unslashed = isset( $_POST['woocommerce-process-checkout-nonce'] ) ? \wp_unslash( (string) $_POST['woocommerce-process-checkout-nonce'] ) : ( isset( $_POST['nonce'] ) ? \wp_unslash( (string) $_POST['nonce'] ) : ( isset( $_POST['security'] ) ? \wp_unslash( (string) $_POST['security'] ) : '' ) );
+			$nonce           = \sanitize_text_field( $nonce_unslashed );
+			$nonce_ok        = ( '' !== $nonce ) && \wp_verify_nonce( $nonce, 'woocommerce-process_checkout' );
+			if ( ! $nonce_ok && ! \is_admin() ) {
+				return;
+			}
+
 			$context = $this->buildContext();
 			$fields  = $this->fieldRepository->findAll( array( 'enabled' => true ) );
 			$map     = $this->visibilityResolver->resolveAll( $context );
@@ -91,8 +98,11 @@ class OrderMetaHandler {
 	 */
 	private function saveOneFieldValue( \WC_Order $order, \CoderEmbassy\CheckoutFieldEditor\Models\CA_Field $field, string $post_key ): void {
 		if ( 'file' === $field->type ) {
-			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- file uploads come from $_FILES.
-			$file = $_FILES[ $post_key ] ?? null;
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing -- checked in saveCheckoutMeta.
+			if ( ! isset( $_FILES[ $post_key ] ) || ! is_array( $_FILES[ $post_key ] ) ) {
+				return;
+			}
+			$file = \wp_unslash( $_FILES[ $post_key ] );
 			if ( empty( $file['tmp_name'] ) || UPLOAD_ERR_OK !== (int) $file['error'] ) {
 				return;
 			}
@@ -108,10 +118,11 @@ class OrderMetaHandler {
 		}
 
 		if ( 'repeater' === $field->type ) {
-			$raw_rows = isset( $_POST[ $post_key ] ) ? \wp_unslash( $_POST[ $post_key ] ) : null;
-			if ( ! is_array( $raw_rows ) ) {
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing -- checked in saveCheckoutMeta.
+			if ( ! isset( $_POST[ $post_key ] ) || ! is_array( $_POST[ $post_key ] ) ) {
 				return;
 			}
+			$raw_rows = \wp_unslash( $_POST[ $post_key ] );
 			$sanitized = array();
 			foreach ( $raw_rows as $row ) {
 				if ( ! is_array( $row ) ) {
@@ -129,10 +140,11 @@ class OrderMetaHandler {
 			return;
 		}
 
-		$raw = isset( $_POST[ $post_key ] ) ? \wp_unslash( $_POST[ $post_key ] ) : null;
-		if ( null === $raw ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- checked in saveCheckoutMeta.
+		if ( ! isset( $_POST[ $post_key ] ) ) {
 			return;
 		}
+		$raw = \wp_unslash( $_POST[ $post_key ] );
 
 		if ( \is_array( $raw ) ) {
 			$value = \implode( ',', \array_map( 'sanitize_text_field', $raw ) );

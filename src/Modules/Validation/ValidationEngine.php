@@ -35,9 +35,8 @@ class ValidationEngine {
 
 			// Validate classic checkout request nonce when present.
 			// We don't hard-fail when it's missing because some contexts (admin preview, tests) may call this method.
-			$nonce = isset( $_POST['woocommerce-process-checkout-nonce'] )
-				? \sanitize_text_field( \wp_unslash( (string) $_POST['woocommerce-process-checkout-nonce'] ) )
-				: '';
+			$nonce_raw = isset( $_POST['woocommerce-process-checkout-nonce'] ) ? \wp_unslash( (string) $_POST['woocommerce-process-checkout-nonce'] ) : '';
+			$nonce     = \sanitize_text_field( $nonce_raw );
 			if ( '' !== $nonce && ! \wp_verify_nonce( $nonce, 'woocommerce-process_checkout' ) ) {
 				return;
 			}
@@ -63,6 +62,7 @@ class ValidationEngine {
 					continue;
 				}
 
+				// phpcs:ignore WordPress.Security.NonceVerification.Missing -- checked at start of validateCheckout.
 				$raw_post = isset( $_POST[ $field->field_key ] ) ? \wp_unslash( $_POST[ $field->field_key ] ) : null;
 				if ( is_array( $raw_post ) ) {
 					$value = implode( ',', array_map( 'sanitize_text_field', $raw_post ) );
@@ -80,8 +80,8 @@ class ValidationEngine {
 				}
 			}
 
-			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 			\do_action( 'ca_after_validation', $results, $context );
+			\do_action( 'cecfe_after_validation', $results, $context );
 		} catch ( \Throwable $e ) {
 			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
 				// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
@@ -196,6 +196,7 @@ class ValidationEngine {
 		}
 
 		\do_action( 'ca_after_validation', $results, $context );
+		\do_action( 'cecfe_after_validation', $results, $context );
 	}
 
 	public function validateField( CA_Field $field, mixed $value, array $context ): ValidationResult {
@@ -267,7 +268,11 @@ class ValidationEngine {
 			$confirm_key   = $rules['confirm'];
 			$confirm_value = isset( $context['field_values'][ $confirm_key ] ) ? (string) $context['field_values'][ $confirm_key ] : '';
 			if ( '' === $confirm_value && isset( $_POST[ $confirm_key ] ) ) {
-				$confirm_value = \sanitize_text_field( \wp_unslash( (string) $_POST[ $confirm_key ] ) );
+				$nonce_val = isset( $_POST['woocommerce-process-checkout-nonce'] ) ? \wp_unslash( (string) $_POST['woocommerce-process-checkout-nonce'] ) : ( isset( $_POST['nonce'] ) ? \wp_unslash( (string) $_POST['nonce'] ) : ( isset( $_POST['security'] ) ? \wp_unslash( (string) $_POST['security'] ) : '' ) );
+				$nonce_clean = \sanitize_text_field( $nonce_val );
+				if ( '' !== $nonce_clean && ( \wp_verify_nonce( $nonce_clean, 'woocommerce-process_checkout' ) || \wp_verify_nonce( $nonce_clean, 'ca_set_type' ) ) ) {
+					$confirm_value = \sanitize_text_field( \wp_unslash( (string) $_POST[ $confirm_key ] ) );
+				}
 			}
 			if ( $string_value !== $confirm_value ) {
 				/* translators: %s: the label shown for the checkout field. */
@@ -284,8 +289,8 @@ class ValidationEngine {
 		}
 
 		$base_result = ValidationResult::pass( $field->field_key );
-		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
-		$custom      = \apply_filters( 'ca_custom_validator_' . $field->field_key, $base_result, $value, $field, $context );
+		$custom = \apply_filters( 'cecfe_custom_validator_' . $field->field_key, $base_result, $value, $field, $context );
+		$custom = \apply_filters( 'ca_custom_validator_' . $field->field_key, $custom, $value, $field, $context );
 		if ( $custom instanceof ValidationResult ) {
 			return $this->filterFieldValidationResult( $custom, $field, $value, $context );
 		}
@@ -298,11 +303,13 @@ class ValidationEngine {
 	}
 
 	public function filterFieldHtml( string $html, CA_Field $field, array $context ): string {
-		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+		\do_action( 'cecfe_before_field_render', $field, $context );
 		\do_action( 'ca_before_field_render', $field, $context );
-		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+
+		$html = (string) \apply_filters( 'cecfe_field_html', $html, $field, $context );
 		$html = (string) \apply_filters( 'ca_field_html', $html, $field, $context );
-		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+
+		\do_action( 'cecfe_after_field_render', $field, $context );
 		\do_action( 'ca_after_field_render', $field, $context );
 		return $html;
 	}
@@ -407,7 +414,8 @@ class ValidationEngine {
 	}
 
 	private function filterFieldValidationResult( ValidationResult $result, CA_Field $field, mixed $value, array $context ): ValidationResult {
-		$filtered = \apply_filters( 'ca_validate_field', $result, $field, $value, $context );
+		$filtered = \apply_filters( 'cecfe_validate_field', $result, $field, $value, $context );
+		$filtered = \apply_filters( 'ca_validate_field', $filtered, $field, $value, $context );
 		return $filtered instanceof ValidationResult ? $filtered : $result;
 	}
 

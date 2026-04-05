@@ -86,16 +86,33 @@ class CheckoutRenderer {
 					$request_method  = isset( $_SERVER['REQUEST_METHOD'] ) ? \sanitize_key( \wp_unslash( (string) $_SERVER['REQUEST_METHOD'] ) ) : 'get';
 					$is_post         = ( 'post' === strtolower( $request_method ) );
 					if ( ! empty( $allowed_types ) && $is_post ) {
-						$posted_type = isset( $_POST['ca_customer_type'] ) ? \sanitize_key( \wp_unslash( (string) $_POST['ca_customer_type'] ) ) : '';
+						$nonce_unslashed = isset( $_POST['_ca_type_nonce'] ) ? \wp_unslash( (string) $_POST['_ca_type_nonce'] ) : ( isset( $_POST['nonce'] ) ? \wp_unslash( (string) $_POST['nonce'] ) : '' );
+						$nonce           = \sanitize_text_field( $nonce_unslashed );
+						$nonce_ok        = ( '' !== $nonce ) && \wp_verify_nonce( $nonce, 'ca_set_type' );
+						$posted_type_raw = isset( $_POST['ca_customer_type'] ) ? \wp_unslash( (string) $_POST['ca_customer_type'] ) : '';
+						$posted_type     = \sanitize_key( $posted_type_raw );
+
 						if ( '' === $posted_type && ! empty( $_POST['post_data'] ) ) {
-							// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- post_data is a URL-encoded query string.
-							$form_data   = array();
+							$form_data = array();
+							// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- post_data is a URL-encoded string; results are sanitized below.
 							\parse_str( \wp_unslash( (string) $_POST['post_data'] ), $form_data );
 							$posted_type = isset( $form_data['ca_customer_type'] ) ? \sanitize_key( (string) $form_data['ca_customer_type'] ) : '';
 						}
-						$current_type = '' !== $posted_type ? $posted_type : $this->customerTypeManager->getCurrentTypeSlug();
-						if ( '' !== $current_type && ! \in_array( $current_type, $allowed_types, true ) ) {
-							$fields[ $group ][ $key ]['required'] = false;
+
+						// If no specific plugin nonce, but we have a WooCommerce checkout nonce, allow it.
+						if ( ! $nonce_ok ) {
+							$wc_nonce_unslashed = isset( $_POST['woocommerce-process-checkout-nonce'] ) ? \wp_unslash( (string) $_POST['woocommerce-process-checkout-nonce'] ) : ( isset( $_POST['security'] ) ? \wp_unslash( (string) $_POST['security'] ) : '' );
+							$wc_nonce           = \sanitize_text_field( $wc_nonce_unslashed );
+							if ( '' !== $wc_nonce && \wp_verify_nonce( $wc_nonce, 'woocommerce-process_checkout' ) ) {
+								$nonce_ok = true;
+							}
+						}
+
+						if ( $nonce_ok ) {
+							$current_type = '' !== $posted_type ? $posted_type : $this->customerTypeManager->getCurrentTypeSlug();
+							if ( '' !== $current_type && ! \in_array( $current_type, $allowed_types, true ) ) {
+								$fields[ $group ][ $key ]['required'] = false;
+							}
 						}
 					}
 				}
@@ -157,8 +174,13 @@ class CheckoutRenderer {
 
 		$types_str = esc_attr( implode( ',', $types ) );
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing
-		$posted_type  = isset( $_POST['ca_customer_type'] ) ? \sanitize_key( \wp_unslash( (string) $_POST['ca_customer_type'] ) ) : '';
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce checked via fallback to getCurrentTypeSlug if missing.
+		$nonce_unslashed = isset( $_POST['_ca_type_nonce'] ) ? \wp_unslash( (string) $_POST['_ca_type_nonce'] ) : ( isset( $_POST['nonce'] ) ? \wp_unslash( (string) $_POST['nonce'] ) : '' );
+		$nonce           = \sanitize_text_field( $nonce_unslashed );
+		$posted_type_raw = ( '' !== $nonce && \wp_verify_nonce( $nonce, 'ca_set_type' ) )
+			? ( isset( $_POST['ca_customer_type'] ) ? \wp_unslash( (string) $_POST['ca_customer_type'] ) : '' )
+			: '';
+		$posted_type = \sanitize_key( $posted_type_raw );
 		$current_type = '' !== $posted_type ? $posted_type : '';
 		if ( '' === $current_type ) {
 			try {
@@ -857,10 +879,9 @@ class CheckoutRenderer {
 			return;
 		}
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing
-		$cart_item_key = \sanitize_text_field( \wp_unslash( $_POST['cart_item_key'] ?? '' ) );
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing
-		$qty = isset( $_POST['qty'] ) ? (int) $_POST['qty'] : 0;
+		$cart_item_key_raw = isset( $_POST['cart_item_key'] ) ? \wp_unslash( (string) $_POST['cart_item_key'] ) : '';
+		$cart_item_key     = \sanitize_text_field( $cart_item_key_raw );
+		$qty               = isset( $_POST['qty'] ) ? (int) $_POST['qty'] : 0;
 
 		if ( '' === $cart_item_key ) {
 			\wp_send_json_error( array( 'message' => 'Invalid cart item.' ), 400 );
@@ -881,13 +902,15 @@ class CheckoutRenderer {
 	}
 
 	public function ajaxSetCustomerType(): void {
-		$nonce = isset( $_POST['_ca_type_nonce'] )
-			? \sanitize_text_field( \wp_unslash( (string) $_POST['_ca_type_nonce'] ) )
-			: ( isset( $_POST['nonce'] ) ? \sanitize_text_field( \wp_unslash( (string) $_POST['nonce'] ) ) : '' );
-		if ( ! wp_verify_nonce( (string) $nonce, 'ca_set_type' ) ) {
+		$nonce_raw = isset( $_POST['_ca_type_nonce'] )
+			? \wp_unslash( (string) $_POST['_ca_type_nonce'] )
+			: ( isset( $_POST['nonce'] ) ? \wp_unslash( (string) $_POST['nonce'] ) : '' );
+		$nonce = \sanitize_text_field( $nonce_raw );
+		if ( ! wp_verify_nonce( $nonce, 'ca_set_type' ) ) {
 			wp_send_json_error( array( 'message' => 'Invalid nonce.' ), 403 );
 		}
-		$type = isset( $_POST['type'] ) ? sanitize_key( wp_unslash( (string) $_POST['type'] ) ) : ( isset( $_POST['value'] ) ? sanitize_key( wp_unslash( (string) $_POST['value'] ) ) : '' );
+		$type_val = isset( $_POST['type'] ) ? \wp_unslash( (string) $_POST['type'] ) : ( isset( $_POST['value'] ) ? \wp_unslash( (string) $_POST['value'] ) : '' );
+		$type     = sanitize_key( $type_val );
 		if ( '' === $type ) {
 			wp_send_json_error( array( 'message' => 'Missing type.' ), 422 );
 		}
@@ -948,9 +971,10 @@ class CheckoutRenderer {
 		$user      = wp_get_current_user();
 		$role      = is_array( $user->roles ) && ! empty( $user->roles ) ? (string) $user->roles[0] : 'guest';
 		$posted_type = '';
-		$nonce_ok    = isset( $_POST['_ca_type_nonce'] )
-			? \wp_verify_nonce( \sanitize_text_field( \wp_unslash( (string) $_POST['_ca_type_nonce'] ) ), 'ca_set_type' )
-			: false;
+		$nonce_unslashed = isset( $_POST['_ca_type_nonce'] ) ? \wp_unslash( (string) $_POST['_ca_type_nonce'] ) : ( isset( $_POST['nonce'] ) ? \wp_unslash( (string) $_POST['nonce'] ) : '' );
+		$nonce           = \sanitize_text_field( $nonce_unslashed );
+		$nonce_ok        = ( '' !== $nonce ) && \wp_verify_nonce( $nonce, 'ca_set_type' );
+
 		if ( $nonce_ok && isset( $_POST['ca_customer_type'] ) ) {
 			$posted_type = \sanitize_key( \wp_unslash( (string) $_POST['ca_customer_type'] ) );
 		}
@@ -976,12 +1000,19 @@ class CheckoutRenderer {
 	}
 
 	private function getFieldValue( string $field_key ): string|array {
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing
-		$nonce_ok = isset( $_POST['_ca_type_nonce'] )
-			? \wp_verify_nonce( \sanitize_text_field( \wp_unslash( (string) $_POST['_ca_type_nonce'] ) ), 'ca_set_type' )
-			: false;
-		if ( $nonce_ok && isset( $_POST[ $field_key ] ) ) {
-			$raw = wp_unslash( $_POST[ $field_key ] );
+		$nonce_val = isset( $_POST['_ca_type_nonce'] ) ? \wp_unslash( (string) $_POST['_ca_type_nonce'] ) : ( isset( $_POST['nonce'] ) ? \wp_unslash( (string) $_POST['nonce'] ) : '' );
+		$nonce_ok  = ( '' !== $nonce_val ) && \wp_verify_nonce( \sanitize_text_field( $nonce_val ), 'ca_set_type' );
+
+		if ( ! $nonce_ok ) {
+			$wc_n_raw = isset( $_POST['woocommerce-process-checkout-nonce'] ) ? \wp_unslash( (string) $_POST['woocommerce-process-checkout-nonce'] ) : ( isset( $_POST['security'] ) ? \wp_unslash( (string) $_POST['security'] ) : '' );
+			$wc_nonce = \sanitize_text_field( $wc_n_raw );
+			if ( '' !== $wc_nonce && \wp_verify_nonce( $wc_nonce, 'woocommerce-process_checkout' ) ) {
+				$nonce_ok = true;
+			}
+		}
+
+		$raw = isset( $_POST[ $field_key ] ) ? \wp_unslash( $_POST[ $field_key ] ) : null;
+		if ( $nonce_ok && null !== $raw ) {
 			if ( is_array( $raw ) ) {
 				return array_map(
 					static fn ( $v ): string => sanitize_text_field( (string) $v ),
@@ -991,21 +1022,19 @@ class CheckoutRenderer {
 			return sanitize_text_field( (string) $raw );
 		}
 
-		// WooCommerce checkout AJAX requests often send serialized form data in post_data.
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing
-		if ( $nonce_ok && isset( $_POST['post_data'] ) && '' !== (string) $_POST['post_data'] ) {
-			$form_data = array();
-			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- post_data is a URL-encoded query string.
-			parse_str( wp_unslash( (string) $_POST['post_data'] ), $form_data );
-			if ( array_key_exists( $field_key, $form_data ) ) {
-				$raw = $form_data[ $field_key ];
-				if ( is_array( $raw ) ) {
-					return array_map(
-						static fn ( $v ): string => sanitize_text_field( (string) $v ),
-						$raw
-					);
+		if ( $nonce_ok && isset( $_POST['post_data'] ) ) {
+			$post_data_raw = \wp_unslash( (string) $_POST['post_data'] );
+			if ( '' !== $post_data_raw ) {
+				$form_data = array();
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- post_data is a URL-encoded string; results are sanitized below.
+				parse_str( $post_data_raw, $form_data );
+				if ( array_key_exists( $field_key, $form_data ) ) {
+					$raw = $form_data[ $field_key ];
+					if ( is_array( $raw ) ) {
+						return array_map( static fn ( $v ): string => sanitize_text_field( (string) $v ), $raw );
+					}
+					return sanitize_text_field( (string) $raw );
 				}
-				return sanitize_text_field( (string) $raw );
 			}
 		}
 
