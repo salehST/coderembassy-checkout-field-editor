@@ -1,0 +1,11 @@
+{
+  "name": "coderembassy/checkout-field-editor",
+  "autoload": {
+    "psr-4": {
+      "CoderEmbassy\\CheckoutFieldEditor\\": "src/"
+    }
+  },
+  "require": {
+    "php": ">=8.1"
+  }
+}
