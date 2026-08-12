@@ -5,15 +5,13 @@ defined( 'ABSPATH' ) || exit;
 
 use Automattic\WooCommerce\Blocks\Integrations\IntegrationInterface;
 use CoderEmbassy\CheckoutFieldsManager\Models\CECFM_Field;
-use CoderEmbassy\CheckoutFieldsManager\Modules\CustomerTypes\CustomerTypeManager;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\FieldRepository;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\VisibilityResolver;
 
 class BlocksIntegration implements IntegrationInterface {
 	public function __construct(
 		private FieldRepository $fieldRepository,
-		private VisibilityResolver $visibilityResolver,
-		private CustomerTypeManager $customerTypeManager
+		private VisibilityResolver $visibilityResolver
 	) {}
 
 	public function get_name(): string {

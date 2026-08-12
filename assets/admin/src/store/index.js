@@ -2,6 +2,9 @@ import { registerStore } from '@wordpress/data';
 
 const DEFAULT_STATE = {
 	fields: [],
+	sections: [],
+	// Customer types come from the Pro add-on. Free keeps the empty array so
+	// components that list them simply render nothing instead of crashing.
 	types: [],
 	settings: {},
 	globals: {},
@@ -10,6 +13,7 @@ const DEFAULT_STATE = {
 
 const T = {
 	SET_FIELDS: 'SET_FIELDS',
+	SET_SECTIONS: 'SET_SECTIONS',
 	SET_TYPES: 'SET_TYPES',
 	SET_SETTINGS: 'SET_SETTINGS',
 	SET_GLOBALS: 'SET_GLOBALS',
@@ -21,6 +25,7 @@ const T = {
 
 export const actions = {
 	setFields: ( fields ) => ( { type: T.SET_FIELDS, fields } ),
+	setSections: ( sections ) => ( { type: T.SET_SECTIONS, sections } ),
 	setTypes: ( types ) => ( { type: T.SET_TYPES, types } ),
 	setSettings: ( settings ) => ( { type: T.SET_SETTINGS, settings } ),
 	setGlobals: ( globals ) => ( { type: T.SET_GLOBALS, globals } ),
@@ -34,6 +39,8 @@ function reducer( state = DEFAULT_STATE, action ) {
 	switch ( action.type ) {
 		case T.SET_FIELDS:
 			return { ...state, fields: action.fields || [] };
+		case T.SET_SECTIONS:
+			return { ...state, sections: action.sections || [] };
 		case T.SET_TYPES:
 			return { ...state, types: action.types || [] };
 		case T.SET_SETTINGS:
@@ -55,6 +62,7 @@ function reducer( state = DEFAULT_STATE, action ) {
 
 export const selectors = {
 	getFields: ( s ) => s.fields,
+	getSections: ( s ) => s.sections,
 	getTypes: ( s ) => s.types,
 	getSettings: ( s ) => s.settings,
 	getGlobals: ( s ) => s.globals,
@@ -62,9 +70,9 @@ export const selectors = {
 	getEditingFieldId: ( s ) => s.ui.editingFieldId,
 	getNotice: ( s ) => s.ui.notice,
 	isDark: ( s ) => s.ui.isDark,
+	isPro: ( s ) => !! s.globals.isPro,
 };
 
 export const store = 'cecfm/admin';
 
 registerStore( store, { reducer, actions, selectors } );
-

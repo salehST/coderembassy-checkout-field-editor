@@ -3,7 +3,7 @@
  * Plugin Name:       CoderEmbassy Checkout Fields Manager
  * Plugin URI:        https://github.com/salehST/coderembassy-checkout-fields-manager
  * Description:       Manage and customize checkout fields in WooCommerce. Control visibility, add validation, and support both classic and block-based checkout.
- * Version:           1.0.0
+ * Version:           1.0.4
  * Requires at least: 6.0
  * Requires PHP:      8.1
  * Author:            CoderEmbassy
@@ -18,7 +18,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'CECFM_VERSION', '1.0.0' );
+define( 'CECFM_VERSION', '1.0.4' );
 define( 'CECFM_FILE', __FILE__ );
 define( 'CECFM_PATH', plugin_dir_path( __FILE__ ) );
 define( 'CECFM_URL', plugin_dir_url( __FILE__ ) );

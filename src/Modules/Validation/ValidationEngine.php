@@ -3,9 +3,9 @@ namespace CoderEmbassy\CheckoutFieldsManager\Modules\Validation;
 
 defined( 'ABSPATH' ) || exit;
 
+use CoderEmbassy\CheckoutFieldsManager\ExtensionPoints;
+use CoderEmbassy\CheckoutFieldsManager\Frontend\CheckoutContext;
 use CoderEmbassy\CheckoutFieldsManager\Models\CECFM_Field;
-use CoderEmbassy\CheckoutFieldsManager\Modules\Conditions\ConditionEngine;
-use CoderEmbassy\CheckoutFieldsManager\Modules\CustomerTypes\CustomerTypeManager;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\FieldRepository;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\VisibilityResolver;
 
@@ -18,8 +18,7 @@ class ValidationEngine {
 	public function __construct(
 		private VisibilityResolver $resolver,
 		private FieldRepository $fieldRepository,
-		private ConditionEngine $conditionEngine,
-		private CustomerTypeManager $typeManager
+		private CheckoutContext $context
 	) {}
 
 	public function validateCheckout(): void {
@@ -42,15 +41,9 @@ class ValidationEngine {
 				return;
 			}
 
-			$context = $this->conditionEngine->buildContext();
-			// buildContext() relies on an unregistered filter, so customer_type is always ''.
-			// Inject the real session-based type so visibility/required checks work correctly.
-			if ( '' === $context['customer_type'] ) {
-				$type_slug = $this->typeManager->getCurrentTypeSlug();
-				if ( '' !== $type_slug ) {
-					$context['customer_type'] = $type_slug;
-				}
-			}
+			// customer_type resolves through the cecfm_current_customer_type
+			// filter, which only the Pro add-on answers. Free leaves it empty.
+			$context = $this->context->build();
 
 			$fields = $this->fieldRepository->findAll( array( 'enabled' => true ) );
 
@@ -87,7 +80,7 @@ class ValidationEngine {
 				}
 			}
 
-			\do_action( 'CECFM_after_validation', $results, $context );
+			\do_action( 'cecfm_after_validation', $results, $context );
 		} catch ( \Throwable $e ) {
 			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
 				// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
@@ -97,14 +90,7 @@ class ValidationEngine {
 	}
 
 	public function validateBlocksCheckout( \WC_Order $order, \WP_REST_Request $request ): void {
-		$context = $this->conditionEngine->buildContext();
-		// Inject the real customer type here as well.
-		if ( '' === $context['customer_type'] ) {
-			$type_slug = $this->typeManager->getCurrentTypeSlug();
-			if ( '' !== $type_slug ) {
-				$context['customer_type'] = $type_slug;
-			}
-		}
+		$context = $this->context->build();
 
 		$fields = array_values(
 			array_filter(
@@ -122,19 +108,19 @@ class ValidationEngine {
 			}
 		}
 
-		$raw_customer_type = $request->get_param( 'cecfm_customer_type' );
-		if ( null === $raw_customer_type ) {
-			$raw_customer_type = $this->getBlocksRequestFieldValue( $request, $params, 'coderembassy-checkout-fields-manager/cecfm_customer_type', 'cecfm_customer_type' );
-		}
-		if ( null === $raw_customer_type ) {
-			$raw_customer_type = $this->getBlocksFieldValue( 'coderembassy-checkout-fields-manager/cecfm_customer_type', 'order', $order, $checkout_fields_service );
-		}
-		$customer_type = sanitize_key( (string) $raw_customer_type );
-		if ( '' !== $customer_type ) {
-			$this->typeManager->setCurrentType( $customer_type );
-			$context['customer_type'] = $customer_type;
-			$context['field_values']['cecfm_customer_type'] = $customer_type;
-		}
+		/**
+		 * Adjust the checkout context for a Blocks request.
+		 *
+		 * Free cannot resolve a customer type — it has no type engine — and the
+		 * value only exists inside the Store API request, which the standard
+		 * context builder cannot see. The add-on hooks this to fill it in.
+		 *
+		 * @param array            $context
+		 * @param \WC_Order        $order
+		 * @param \WP_REST_Request $request
+		 * @param array            $params
+		 */
+		$context = (array) \apply_filters( ExtensionPoints::BLOCKS_CONTEXT, $context, $order, $request, $params );
 
 		foreach ( $fields as $field ) {
 			if ( \in_array( $field->type, array( 'multiselect', 'checkbox_group' ), true ) ) {
@@ -201,7 +187,7 @@ class ValidationEngine {
 			$order->update_meta_data( '_cecfm_customer_type', $context['customer_type'] );
 		}
 
-		\do_action( 'CECFM_after_validation', $results, $context );
+		\do_action( 'cecfm_after_validation', $results, $context );
 	}
 
 	public function validateField( CECFM_Field $field, mixed $value, array $context ): ValidationResult {
@@ -294,7 +280,7 @@ class ValidationEngine {
 		}
 
 		$base_result = ValidationResult::pass( $field->field_key );
-		$custom      = \apply_filters( 'CECFM_custom_validator_' . $field->field_key, $base_result, $value, $field, $context );
+		$custom      = \apply_filters( 'cecfm_custom_validator_' . $field->field_key, $base_result, $value, $field, $context );
 		if ( $custom instanceof ValidationResult ) {
 			return $this->filterFieldValidationResult( $custom, $field, $value, $context );
 		}
@@ -307,9 +293,9 @@ class ValidationEngine {
 	}
 
 	public function filterFieldHtml( string $html, CECFM_Field $field, array $context ): string {
-		\do_action( 'CECFM_before_field_render', $field, $context );
-		$html = (string) \apply_filters( 'CECFM_field_html', $html, $field, $context );
-		\do_action( 'CECFM_after_field_render', $field, $context );
+		\do_action( 'cecfm_before_field_render', $field, $context );
+		$html = (string) \apply_filters( 'cecfm_field_html', $html, $field, $context );
+		\do_action( 'cecfm_after_field_render', $field, $context );
 		return $html;
 	}
 
@@ -413,7 +399,7 @@ class ValidationEngine {
 	}
 
 	private function filterFieldValidationResult( ValidationResult $result, CECFM_Field $field, mixed $value, array $context ): ValidationResult {
-		$filtered = \apply_filters( 'CECFM_validate_field', $result, $field, $value, $context );
+		$filtered = \apply_filters( 'cecfm_validate_field', $result, $field, $value, $context );
 		return $filtered instanceof ValidationResult ? $filtered : $result;
 	}
 

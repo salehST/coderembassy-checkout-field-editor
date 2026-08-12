@@ -3,6 +3,7 @@ namespace CoderEmbassy\CheckoutFieldsManager\Admin\Controllers;
 
 defined( 'ABSPATH' ) || exit;
 
+use CoderEmbassy\CheckoutFieldsManager\Modules\Licensing\FeatureGate;
 use CoderEmbassy\CheckoutFieldsManager\Models\CECFM_Field;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\FieldRepository;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\RevisionRepository;
@@ -123,6 +124,10 @@ class FieldsController extends BaseController {
 	public function create( WP_REST_Request $request ) {
 		$payload = $this->sanitizeFieldPayload( $request->get_json_params() ?: array() );
 
+		if ( '' === (string) ( $payload['field_key'] ?? '' ) || '' === (string) ( $payload['label'] ?? '' ) ) {
+			return $this->error( 'Field label and field key are required.', 422 );
+		}
+
 		// No pricing rules restrictions.
 
 		// No field count limits.
@@ -132,7 +137,17 @@ class FieldsController extends BaseController {
 		// No condition rules limits.
 
 		$field = CECFM_Field::fromArray( $payload );
-		$id    = $this->repository->save( $field );
+
+		try {
+			$id = $this->repository->save( $field );
+		} catch ( \Throwable $e ) {
+			$message = 'Failed to create field.';
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				$message .= ' ' . $e->getMessage();
+			}
+			return $this->error( $message, 500 );
+		}
+
 		$field = $this->repository->findById( $id );
 
 		if ( ! $field instanceof CECFM_Field ) {
@@ -177,7 +192,7 @@ class FieldsController extends BaseController {
 
 		global $wpdb;
 		$meta_key = '_cecfm_' . $field->field_key;
-		$cache_key   = 'CECFM_postmeta_count_' . md5( $meta_key );
+		$cache_key   = 'cecfm_postmeta_count_' . md5( $meta_key );
 		$cache_group = 'coderembassy-checkout-fields-manager';
 		$cached      = wp_cache_get( $cache_key, $cache_group );
 		if ( false !== $cached ) {
@@ -300,12 +315,48 @@ class FieldsController extends BaseController {
 			'enabled'          => array_key_exists( 'enabled', $data ) ? (bool) $data['enabled'] : (bool) ( $base['enabled'] ?? true ),
 			'conditions'          => $data['conditions'] ?? ( $base['conditions'] ?? array() ),
 			'required_conditions' => $data['required_conditions'] ?? ( $base['required_conditions'] ?? array() ),
-			'customer_types'      => $data['customer_types'] ?? ( $base['customer_types'] ?? array() ),
+			'customer_types'      => $this->mergeCustomerTypes( $data, $base ),
 			'pricing_rules'    => $data['pricing_rules'] ?? ( $base['pricing_rules'] ?? array() ),
 			'validation_rules' => $data['validation_rules'] ?? ( $base['validation_rules'] ?? array() ),
 			'options'          => $data['options'] ?? ( $base['options'] ?? array() ),
 			'meta'             => $data['meta'] ?? ( $base['meta'] ?? array() ),
 		);
+	}
+
+	/**
+	 * Merge submitted customer types with ones this install cannot see.
+	 *
+	 * The free plugin only offers Private and Company, so its editor submits at
+	 * most those two. Overwriting the stored list would silently discard types an
+	 * add-on created — a store that downgrades, edits one field, and upgrades
+	 * again would find its assignments gone. Anything outside the allowed set is
+	 * therefore carried over untouched.
+	 *
+	 * @param array<string, mixed> $data Incoming payload.
+	 * @param array<string, mixed> $base Currently stored field.
+	 * @return array<int, string>
+	 */
+	private function mergeCustomerTypes( array $data, array $base ): array {
+		$stored = is_array( $base['customer_types'] ?? null ) ? $base['customer_types'] : array();
+
+		if ( ! array_key_exists( 'customer_types', $data ) ) {
+			return $stored;
+		}
+
+		$submitted = is_array( $data['customer_types'] ) ? $data['customer_types'] : array();
+		$allowed   = FeatureGate::allowedCustomerTypes();
+
+		// The add-on manages every type, so the payload is authoritative.
+		if ( null === $allowed ) {
+			return array_values( array_unique( array_map( 'sanitize_key', $submitted ) ) );
+		}
+
+		$hidden = array_filter(
+			$stored,
+			static fn ( $slug ): bool => ! in_array( $slug, $allowed, true )
+		);
+
+		return array_values( array_unique( array_map( 'sanitize_key', array_merge( $submitted, $hidden ) ) ) );
 	}
 }
 

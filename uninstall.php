@@ -3,9 +3,9 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
 // Only run if the uninstall was triggered by WordPress.
 $cecfm_settings = json_decode( get_option( 'cecfm_settings', '' ), true );
-$remove_data    = isset( $cecfm_settings['remove_data_on_uninstall'] ) && $cecfm_settings['remove_data_on_uninstall'];
+$cecfm_remove_data = isset( $cecfm_settings['remove_data_on_uninstall'] ) && $cecfm_settings['remove_data_on_uninstall'];
 
-if ( ! $remove_data ) {
+if ( ! $cecfm_remove_data ) {
 	return;
 }
 

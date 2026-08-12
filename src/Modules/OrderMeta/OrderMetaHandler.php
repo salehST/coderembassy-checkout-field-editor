@@ -3,8 +3,7 @@ namespace CoderEmbassy\CheckoutFieldsManager\Modules\OrderMeta;
 
 defined( 'ABSPATH' ) || exit;
 
-use CoderEmbassy\CheckoutFieldsManager\Modules\Conditions\ConditionEngine;
-use CoderEmbassy\CheckoutFieldsManager\Modules\CustomerTypes\CustomerTypeManager;
+use CoderEmbassy\CheckoutFieldsManager\Frontend\CheckoutContext;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\FieldRepository;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\VisibilityResolver;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Sections\SectionRepository;
@@ -21,8 +20,7 @@ class OrderMetaHandler {
 	public function __construct(
 		private FieldRepository $fieldRepository,
 		private VisibilityResolver $visibilityResolver,
-		private ConditionEngine $conditionEngine,
-		private CustomerTypeManager $typeManager,
+		private CheckoutContext $context,
 		private SectionRepository $sectionRepository
 	) {}
 
@@ -605,14 +603,7 @@ class OrderMetaHandler {
 	// --- Helpers --------------------------------------------------------------
 
 	private function buildContext(): array {
-		$context = $this->conditionEngine->buildContext();
-		if ( '' === $context['customer_type'] ) {
-			$type_slug = $this->typeManager->getCurrentTypeSlug();
-			if ( '' !== $type_slug ) {
-				$context['customer_type'] = $type_slug;
-			}
-		}
-		return $context;
+		return $this->context->build();
 	}
 
 	private function buildMetaRows( \WC_Order $order, bool $is_thankyou_context, bool $is_account_context, array $settings = array() ): string {

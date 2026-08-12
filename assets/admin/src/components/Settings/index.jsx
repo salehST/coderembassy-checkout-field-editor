@@ -4,6 +4,7 @@ import { __ } from '@wordpress/i18n';
 import { store } from '../../store';
 import { saveSettings } from '../../api/client';
 import Toggle from '../shared/Toggle';
+import { getSettingsPanels } from '../../extensions';
 
 export default function Settings() {
 	const settings             = useSelect( ( s ) => s( store ).getSettings(), [] );
@@ -101,6 +102,11 @@ export default function Settings() {
 					onChange={ ( e ) => set( 'custom_css', e.target.value ) }
 				/>
 			</div>
+
+			{ /* Add-on settings cards, after the core ones. */ }
+			{ getSettingsPanels().map( ( Panel, i ) => (
+				<Panel key={ i } settings={ form } setSetting={ set } />
+			) ) }
 		</div>
 	);
 }

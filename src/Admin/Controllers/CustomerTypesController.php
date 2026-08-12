@@ -4,6 +4,7 @@ namespace CoderEmbassy\CheckoutFieldsManager\Admin\Controllers;
 defined( 'ABSPATH' ) || exit;
 
 use CoderEmbassy\CheckoutFieldsManager\Models\CECFM_CustomerType;
+use CoderEmbassy\CheckoutFieldsManager\Modules\Licensing\FeatureGate;
 use CoderEmbassy\CheckoutFieldsManager\Modules\CustomerTypes\CustomerTypeRepository;
 use WP_REST_Request;
 use WP_REST_Server;
@@ -63,7 +64,22 @@ class CustomerTypesController extends BaseController {
 	}
 
 	public function index() {
-		return $this->success( array_map( array( $this, 'transform' ), $this->repository->findAll() ) );
+		$types   = $this->repository->findAll();
+		$allowed = FeatureGate::allowedCustomerTypes();
+
+		// Without the add-on, only the built-in pair is offered. Types it created
+		// stay in the database untouched — they are just not listed, so the field
+		// editor never shows a type this install cannot manage.
+		if ( null !== $allowed ) {
+			$types = array_values(
+				array_filter(
+					$types,
+					static fn ( $type ): bool => in_array( $type->slug, $allowed, true )
+				)
+			);
+		}
+
+		return $this->success( array_map( array( $this, 'transform' ), $types ) );
 	}
 
 	/**

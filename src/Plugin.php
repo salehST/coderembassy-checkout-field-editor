@@ -7,8 +7,6 @@ use CoderEmbassy\CheckoutFieldsManager\Admin\AdminPage;
 use CoderEmbassy\CheckoutFieldsManager\Admin\RestController;
 use CoderEmbassy\CheckoutFieldsManager\Interfaces\ModuleInterface;
 use CoderEmbassy\CheckoutFieldsManager\Modules\AdminModule;
-use CoderEmbassy\CheckoutFieldsManager\Modules\Conditions\ConditionsModule;
-use CoderEmbassy\CheckoutFieldsManager\Modules\CustomerTypes\CustomerTypesModule;
 use CoderEmbassy\CheckoutFieldsManager\Modules\DatabaseModule;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\FieldsModule;
 use CoderEmbassy\CheckoutFieldsManager\Modules\FrontendModule;
@@ -97,8 +95,6 @@ class Plugin {
 		$module_order = array(
 			DatabaseModule::class,
 			FieldsModule::class,
-			CustomerTypesModule::class,
-			ConditionsModule::class,
 			ValidationModule::class,
 			FrontendModule::class,
 			AdminModule::class,

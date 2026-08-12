@@ -4,6 +4,41 @@ namespace CoderEmbassy\CheckoutFieldsManager\Database;
 defined( 'ABSPATH' ) || exit;
 
 class Schema {
+	public static function ensureTables(): void {
+		global $wpdb;
+
+		// Check every table, not just the first. Checking only the fields table
+		// meant a partial install (e.g. one where a CREATE failed) never healed,
+		// because the guard passed while sections/customer_types were missing.
+		foreach ( self::getTables() as $table ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+
+			if ( $table !== $exists ) {
+				self::createTables();
+				break;
+			}
+		}
+
+		self::ensureFieldColumns();
+	}
+
+	public static function ensureFieldColumns(): void {
+		global $wpdb;
+
+		$table = $wpdb->prefix . 'cecfm_fields';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$columns = $wpdb->get_col( "SHOW COLUMNS FROM {$table}", 0 );
+		if ( ! is_array( $columns ) ) {
+			return;
+		}
+
+		if ( ! in_array( 'required_conditions', $columns, true ) ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange
+			$wpdb->query( "ALTER TABLE {$table} ADD COLUMN required_conditions LONGTEXT NULL AFTER conditions" );
+		}
+	}
+
 	public static function createTables(): void {
 		global $wpdb;
 
@@ -23,20 +58,20 @@ field_key VARCHAR(100) NOT NULL,
 type VARCHAR(50) NOT NULL,
 label VARCHAR(255) NOT NULL,
 placeholder VARCHAR(255) DEFAULT '',
-description TEXT DEFAULT '',
+description TEXT NULL,
 section VARCHAR(50) NOT NULL DEFAULT 'billing',
 position VARCHAR(50) NOT NULL DEFAULT 'after_address',
 priority INT NOT NULL DEFAULT 10,
 width VARCHAR(10) NOT NULL DEFAULT 'full',
 required TINYINT(1) NOT NULL DEFAULT 0,
 enabled TINYINT(1) NOT NULL DEFAULT 1,
-conditions LONGTEXT NOT NULL DEFAULT '[]',
-required_conditions LONGTEXT NOT NULL DEFAULT '[]',
-customer_types LONGTEXT NOT NULL DEFAULT '[]',
-pricing_rules LONGTEXT NOT NULL DEFAULT '[]',
-validation_rules LONGTEXT NOT NULL DEFAULT '{}',
-options LONGTEXT NOT NULL DEFAULT '[]',
-meta LONGTEXT NOT NULL DEFAULT '{}',
+conditions LONGTEXT NULL,
+required_conditions LONGTEXT NULL,
+customer_types LONGTEXT NULL,
+pricing_rules LONGTEXT NULL,
+validation_rules LONGTEXT NULL,
+options LONGTEXT NULL,
+meta LONGTEXT NULL,
 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY  (id),
@@ -49,11 +84,11 @@ KEY enabled (enabled)
 id bigint(20) NOT NULL AUTO_INCREMENT,
 slug VARCHAR(50) NOT NULL,
 label VARCHAR(100) NOT NULL,
-description TEXT DEFAULT '',
+description TEXT NULL,
 is_default TINYINT(1) NOT NULL DEFAULT 0,
 enabled TINYINT(1) NOT NULL DEFAULT 1,
 priority INT NOT NULL DEFAULT 10,
-meta LONGTEXT NOT NULL DEFAULT '{}',
+meta LONGTEXT NULL,
 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY  (id),
@@ -64,13 +99,13 @@ UNIQUE KEY slug (slug)
 id bigint(20) NOT NULL AUTO_INCREMENT,
 section_key VARCHAR(100) NOT NULL,
 title VARCHAR(255) NOT NULL,
-description TEXT DEFAULT '',
+description TEXT NULL,
 position VARCHAR(50) NOT NULL DEFAULT 'before_order_notes',
 priority INT NOT NULL DEFAULT 10,
 enabled TINYINT(1) NOT NULL DEFAULT 1,
-conditions LONGTEXT NOT NULL DEFAULT '[]',
-customer_types LONGTEXT NOT NULL DEFAULT '[]',
-meta LONGTEXT NOT NULL DEFAULT '{}',
+conditions LONGTEXT NULL,
+customer_types LONGTEXT NULL,
+meta LONGTEXT NULL,
 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY  (id),

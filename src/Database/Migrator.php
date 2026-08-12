@@ -8,6 +8,9 @@ class Migrator {
 	private const RAN_OPTION     = 'cecfm_ran_migrations';
 
 	public function maybeMigrate(): void {
+		Schema::ensureTables();
+		Installer::ensureDefaultCustomerType();
+
 		$current_version = (string) \get_option( self::VERSION_OPTION, '0.0.0' );
 		if ( version_compare( $current_version, CECFM_DB_VERSION, '>=' ) ) {
 			return;

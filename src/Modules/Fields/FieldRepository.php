@@ -91,6 +91,8 @@ class FieldRepository extends AbstractRepository {
 			throw new InvalidArgumentException( 'FieldRepository expects a CECFM_Field entity.' );
 		}
 
+		\CoderEmbassy\CheckoutFieldsManager\Database\Schema::ensureTables();
+
 		$now     = \current_time( 'mysql' );
 		$payload = array(
 			'section_id'          => $entity->section_id,
@@ -114,15 +116,32 @@ class FieldRepository extends AbstractRepository {
 			'meta'                => $this->jsonEncode( $entity->meta ),
 			'updated_at'          => $now,
 		);
+		$formats = array(
+			'%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s',
+			'%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
+		);
 
 		if ( $entity->id > 0 ) {
-			$this->db->update( $this->table_name, $payload, array( 'id' => $entity->id ) );
+			$updated = $this->db->update( $this->table_name, $payload, array( 'id' => $entity->id ), $formats, array( '%d' ) );
+			if ( false === $updated ) {
+				throw new \RuntimeException( 'Failed to update field: ' . (string) $this->db->last_error );
+			}
 			return $entity->id;
 		}
 
 		$payload['created_at'] = $now;
-		$this->db->insert( $this->table_name, $payload );
-		return (int) $this->db->insert_id;
+		$formats[]             = '%s';
+		$inserted              = $this->db->insert( $this->table_name, $payload, $formats );
+		if ( false === $inserted ) {
+			throw new \RuntimeException( 'Failed to insert field: ' . (string) $this->db->last_error );
+		}
+
+		$insert_id = (int) $this->db->insert_id;
+		if ( $insert_id <= 0 ) {
+			throw new \RuntimeException( 'Failed to insert field: no insert ID returned.' );
+		}
+
+		return $insert_id;
 	}
 
 	public function delete( int $id ): bool {

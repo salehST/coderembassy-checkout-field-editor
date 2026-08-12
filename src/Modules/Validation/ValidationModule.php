@@ -5,20 +5,25 @@ defined( 'ABSPATH' ) || exit;
 
 use CoderEmbassy\CheckoutFieldsManager\Abstracts\AbstractModule;
 
-use CoderEmbassy\CheckoutFieldsManager\Modules\Conditions\ConditionEngine;
-use CoderEmbassy\CheckoutFieldsManager\Modules\CustomerTypes\CustomerTypeManager;
+use CoderEmbassy\CheckoutFieldsManager\Frontend\CheckoutContext;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\FieldRepository;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\VisibilityResolver;
 
 class ValidationModule extends AbstractModule {
 	public function register(): void {
+		if ( ! $this->container->has( CheckoutContext::class ) ) {
+			$this->container->singleton(
+				CheckoutContext::class,
+				static fn (): CheckoutContext => new CheckoutContext()
+			);
+		}
+
 		$this->container->singleton(
 			ValidationEngine::class,
 			fn (): ValidationEngine => new ValidationEngine(
 				$this->container->make( VisibilityResolver::class ),
 				$this->container->make( FieldRepository::class ),
-				$this->container->make( ConditionEngine::class ),
-				$this->container->make( CustomerTypeManager::class )
+				$this->container->make( CheckoutContext::class )
 			)
 		);
 

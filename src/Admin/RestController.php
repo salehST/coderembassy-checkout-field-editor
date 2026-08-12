@@ -3,15 +3,12 @@ namespace CoderEmbassy\CheckoutFieldsManager\Admin;
 
 defined( 'ABSPATH' ) || exit;
 
-use CoderEmbassy\CheckoutFieldsManager\Admin\Controllers\ConditionsController;
 use CoderEmbassy\CheckoutFieldsManager\Admin\Controllers\CustomerTypesController;
 use CoderEmbassy\CheckoutFieldsManager\Admin\Controllers\FieldsController;
 use CoderEmbassy\CheckoutFieldsManager\Admin\Controllers\NativeFieldsController;
-use CoderEmbassy\CheckoutFieldsManager\Admin\Controllers\PreviewController;
 use CoderEmbassy\CheckoutFieldsManager\Admin\Controllers\SectionsController;
 use CoderEmbassy\CheckoutFieldsManager\Admin\Controllers\SettingsController;
 use CoderEmbassy\CheckoutFieldsManager\Container;
-use CoderEmbassy\CheckoutFieldsManager\Modules\Conditions\ConditionEngine;
 use CoderEmbassy\CheckoutFieldsManager\Modules\CustomerTypes\CustomerTypeRepository;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\FieldRepository;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\RevisionRepository;
@@ -38,14 +35,6 @@ class RestController {
 			),
 			new SectionsController(
 				$this->container->make( SectionRepository::class )
-			),
-			new ConditionsController(
-				$this->container->make( ConditionEngine::class )
-			),
-			new PreviewController(
-				$this->container->make( FieldRepository::class ),
-				$this->container->make( VisibilityResolver::class ),
-				$this->container->make( ConditionEngine::class )
 			),
 			new SettingsController(),
 			new NativeFieldsController(),

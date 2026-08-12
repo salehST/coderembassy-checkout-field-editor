@@ -6,6 +6,7 @@ defined( 'ABSPATH' ) || exit;
 use CoderEmbassy\CheckoutFieldsManager\Models\CECFM_CustomerType;
 use CoderEmbassy\CheckoutFieldsManager\Models\CECFM_Field;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\FieldRepository;
+use CoderEmbassy\CheckoutFieldsManager\Modules\Licensing\FeatureGate;
 
 class CustomerTypeManager {
 	public function __construct(
@@ -33,7 +34,8 @@ class CustomerTypeManager {
 		}
 
 		if ( '' === $current_slug ) {
-			$all = $this->repository->findAll();
+			// Only fall back to a type this install actually manages.
+			$all = $this->getAllTypes();
 			if ( ! empty( $all ) ) {
 				$current_slug = $all[0]->slug;
 			}
@@ -44,15 +46,50 @@ class CustomerTypeManager {
 		}
 
 		$context      = array( 'source' => 'runtime' );
-		$filtered_slug = (string) \apply_filters( 'CECFM_current_customer_type', $current_slug, $context );
+		$filtered_slug = (string) \apply_filters( 'cecfm_current_customer_type', $current_slug, $context );
+
+		// A session can still hold a type an add-on created. Without the add-on
+		// that type is not manageable here, so fall back to the default rather
+		// than leaving a Pro-only type active.
+		$allowed = FeatureGate::allowedCustomerTypes();
+		if ( null !== $allowed && ! in_array( $filtered_slug, $allowed, true ) ) {
+			$default       = $this->repository->getDefault();
+			$filtered_slug = $default instanceof CECFM_CustomerType ? $default->slug : '';
+		}
+
+		if ( '' === $filtered_slug ) {
+			return null;
+		}
+
 		return $this->repository->findBySlug( $filtered_slug );
 	}
 
 	/**
 	 * @return CECFM_CustomerType[]
 	 */
+	/**
+	 * Types this install may present to shoppers.
+	 *
+	 * Gated for the same reason the admin list is: without the add-on only the
+	 * built-in pair is offered, so a checkout never shows a type this install
+	 * cannot manage. Rows an add-on created stay in the database untouched.
+	 *
+	 * @return array<int, CECFM_CustomerType>
+	 */
 	public function getAllTypes(): array {
-		return $this->repository->findAll();
+		$types   = $this->repository->findAll();
+		$allowed = FeatureGate::allowedCustomerTypes();
+
+		if ( null === $allowed ) {
+			return $types;
+		}
+
+		return array_values(
+			array_filter(
+				$types,
+				static fn ( $type ): bool => in_array( $type->slug, $allowed, true )
+			)
+		);
 	}
 
 	public function getCurrentTypeSlug(): string {
@@ -75,7 +112,7 @@ class CustomerTypeManager {
 			\update_user_meta( \get_current_user_id(), 'cecfm_customer_type', $slug );
 		}
 
-		\do_action( 'CECFM_customer_type_changed', $slug, $old_slug );
+		\do_action( 'cecfm_customer_type_changed', $slug, $old_slug );
 	}
 
 	public function getFieldsForType( string $slug ): array {
@@ -104,7 +141,7 @@ class CustomerTypeManager {
 	}
 
 	public function getTypeSelectorConfig(): array {
-		$types  = $this->repository->findAll();
+		$types  = $this->getAllTypes();
 		$items  = array();
 		$current = $this->getCurrentType();
 

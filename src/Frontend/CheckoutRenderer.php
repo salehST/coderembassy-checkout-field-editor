@@ -3,12 +3,12 @@ namespace CoderEmbassy\CheckoutFieldsManager\Frontend;
 
 defined( 'ABSPATH' ) || exit;
 
+use CoderEmbassy\CheckoutFieldsManager\ExtensionPoints;
 use CoderEmbassy\CheckoutFieldsManager\Models\CECFM_Field;
 use CoderEmbassy\CheckoutFieldsManager\Modules\CustomerTypes\CustomerTypeManager;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\FieldRepository;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\VisibilityResolver;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Sections\SectionRepository;
-use CoderEmbassy\CheckoutFieldsManager\Modules\Pricing\PricingEngine;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Validation\ValidationEngine;
 
 class CheckoutRenderer {
@@ -20,9 +20,8 @@ class CheckoutRenderer {
 		private FieldRepository $fieldRepository,
 		private VisibilityResolver $visibilityResolver,
 		private ValidationEngine $validationEngine,
-		private CustomerTypeManager $customerTypeManager,
 		private SectionRepository $sectionRepository,
-		private PricingEngine $pricingEngine
+		private CustomerTypeManager $customerTypeManager
 	) {}
 
 	public function filterCheckoutFields( array $fields ): array {
@@ -40,6 +39,8 @@ class CheckoutRenderer {
 	private function doFilterCheckoutFields( array $fields ): array {
 		$raw       = \get_option( 'cecfm_native_fields', '{}' );
 		$overrides = is_string( $raw ) ? ( json_decode( $raw, true ) ?? array() ) : ( is_array( $raw ) ? $raw : array() );
+
+		$fields = $this->restoreHiddenOptionalFields( $fields, $overrides );
 
 		foreach ( $fields as $group => $group_fields ) {
 			foreach ( array_keys( $group_fields ) as $key ) {
@@ -99,7 +100,7 @@ class CheckoutRenderer {
 							\parse_str( $raw_post_data, $form_data );
 							$posted_type = isset( $form_data['cecfm_customer_type'] ) ? \sanitize_key( (string) $form_data['cecfm_customer_type'] ) : '';
 						}
-						$current_type = '' !== $posted_type ? $posted_type : $this->customerTypeManager->getCurrentTypeSlug();
+						$current_type = '' !== $posted_type ? $posted_type : $this->currentTypeSlug();
 						if ( '' !== $current_type && ! \in_array( $current_type, $allowed_types, true ) ) {
 							$fields[ $group ][ $key ]['required'] = false;
 						}
@@ -168,7 +169,7 @@ class CheckoutRenderer {
 		$current_type = '' !== $posted_type ? $posted_type : '';
 		if ( '' === $current_type ) {
 			try {
-				$current_type = $this->customerTypeManager->getCurrentTypeSlug();
+				$current_type = $this->currentTypeSlug();
 			} catch ( \Throwable $e ) {
 			}
 		}
@@ -182,86 +183,6 @@ class CheckoutRenderer {
 		);
 
 		return $field_html;
-	}
-
-	public function renderCustomerTypeSwitcher(): void {
-		$types = $this->customerTypeManager->getAllTypes();
-		if ( empty( $types ) || count( $types ) < 2 ) {
-			return;
-		}
-
-		$current_type   = $this->customerTypeManager->getCurrentTypeSlug();
-		$settings       = $this->getSettings();
-		$switcher_label = isset( $settings['customer_type_switcher_label'] ) && '' !== $settings['customer_type_switcher_label']
-			? $settings['customer_type_switcher_label']
-			: \__( 'Customer Type', 'coderembassy-checkout-fields-manager' );
-		$display_type   = $settings['switcher_display_type'] ?? 'buttons';
-
-		echo '<div class="cecfm-type-switcher">';
-		echo '<label>' . esc_html( $switcher_label ) . '</label>';
-
-		if ( 'radio' === $display_type ) {
-			echo '<div class="cecfm-type-radios">';
-			foreach ( $types as $type ) {
-				$uid = 'cecfm-type-radio-' . \sanitize_key( (string) $type->slug );
-				echo '<label class="cecfm-type-radio-label" for="' . esc_attr( $uid ) . '">';
-				echo '<input type="radio" id="' . esc_attr( $uid ) . '" name="cecfm_customer_type_radio" value="' . esc_attr( $type->slug ) . '"' . checked( $type->slug, $current_type, false ) . ' data-type="' . esc_attr( $type->slug ) . '" class="cecfm-type-radio" />';
-				echo ' ' . esc_html( $type->label );
-				echo '</label>';
-			}
-			echo '</div>';
-		} else {
-			echo '<div class="cecfm-type-buttons">';
-			foreach ( $types as $type ) {
-				$is_active = $type->slug === $current_type;
-				echo '<button type="button" class="cecfm-type-btn' . ( $is_active ? ' is-active' : '' ) . '" data-type="' . esc_attr( $type->slug ) . '">';
-				echo esc_html( $type->label );
-				echo '</button>';
-			}
-			echo '</div>';
-		}
-
-		wp_nonce_field( 'cecfm_set_type', '_cecfm_type_nonce', false );
-		echo '<input type="hidden" name="cecfm_customer_type" id="cecfm-current-type-input" value="' . esc_attr( $current_type ) . '" />';
-
-		$css_parts = array();
-		if ( ! empty( $settings['switcher_bg_color'] ) ) {
-			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { background-color: ' . \sanitize_hex_color( (string) $settings['switcher_bg_color'] ) . ' !important; }';
-		}
-		if ( ! empty( $settings['switcher_active_color'] ) ) {
-			$active      = \sanitize_hex_color( (string) $settings['switcher_active_color'] );
-			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn.is-active, .cecfm-type-switcher .cecfm-type-btn:focus { background-color: ' . $active . ' !important; border-color: ' . $active . ' !important; }';
-		}
-		if ( ! empty( $settings['switcher_border_color'] ) ) {
-			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { border-color: ' . \sanitize_hex_color( (string) $settings['switcher_border_color'] ) . ' !important; }';
-		}
-		if ( isset( $settings['switcher_border_radius'] ) && '' !== (string) $settings['switcher_border_radius'] ) {
-			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { border-radius: ' . absint( $settings['switcher_border_radius'] ) . 'px !important; }';
-		}
-		if ( ! empty( $settings['switcher_shadow'] ) ) {
-			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important; }';
-			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn.is-active { box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important; }';
-		}
-		if ( ! empty( $settings['switcher_font_color'] ) ) {
-			$font_color  = \sanitize_hex_color( (string) $settings['switcher_font_color'] );
-			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { color: ' . $font_color . ' !important; }';
-			$css_parts[] = '.cecfm-type-switcher .cecfm-type-radio-label { color: ' . $font_color . ' !important; }';
-		}
-		if ( ! empty( $settings['switcher_font_size'] ) && (int) $settings['switcher_font_size'] > 0 ) {
-			$font_size   = absint( $settings['switcher_font_size'] );
-			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { font-size: ' . $font_size . 'px !important; }';
-			$css_parts[] = '.cecfm-type-switcher .cecfm-type-radio-label { font-size: ' . $font_size . 'px !important; }';
-		}
-		if ( ! empty( $settings['switcher_padding'] ) ) {
-			$padding     = \sanitize_text_field( (string) $settings['switcher_padding'] );
-			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { padding: ' . $padding . ' !important; }';
-		}
-		if ( ! empty( $settings['switcher_margin'] ) ) {
-			$margin      = \sanitize_text_field( (string) $settings['switcher_margin'] );
-			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { margin: ' . $margin . ' !important; }';
-		}
-		// Styles moved to wp_add_inline_style in FrontendModule.
-		echo '</div>';
 	}
 
 	public function maybeAddFileEnctypeScript(): void {
@@ -362,7 +283,7 @@ class CheckoutRenderer {
 			static fn ( $section ): bool => $section->position === $position && $section->enabled
 		);
 		$fields       = $this->fieldRepository->findAll( array( 'enabled' => true ) );
-		$current_slug = $this->customerTypeManager->getCurrentTypeSlug();
+		$current_slug = $this->currentTypeSlug();
 
 		foreach ( $sections as $section ) {
 			$section_types      = is_array( $section->customer_types ) ? array_filter( $section->customer_types ) : array();
@@ -534,7 +455,7 @@ class CheckoutRenderer {
 	 */
 	public function renderField( CECFM_Field $field, string $name_suffix = '', string $label_suffix = '' ): void {
 		$context      = $this->buildContext();
-		$current_type = $this->customerTypeManager->getCurrentTypeSlug();
+		$current_type = $this->currentTypeSlug();
 		$placeholder  = $this->translateString( (string) $field->placeholder, 'field_placeholder_' . $field->field_key );
 		$description  = $this->translateString( (string) $field->description, 'field_description_' . $field->field_key );
 		$label        = ( isset( $field->meta['labels_by_type'][ $current_type ] ) && is_string( $field->meta['labels_by_type'][ $current_type ] ) )
@@ -594,18 +515,6 @@ class CheckoutRenderer {
 					. '</label>';
 				break;
 
-			case 'multiselect':
-				$input_html = '<select name="' . esc_attr( $effective_key ) . '[]" id="' . esc_attr( $effective_key ) . '" class="select" multiple>';
-				foreach ( $field->options as $option ) {
-					$opt_value   = is_array( $option ) ? (string) ( $option['value'] ?? '' ) : '';
-					$opt_label   = is_array( $option ) ? (string) ( $option['label'] ?? $opt_value ) : '';
-					$opt_label   = $this->translateString( $opt_label, 'field_option_' . $field->field_key . '_' . $opt_value );
-					$selected    = in_array( $opt_value, (array) $value, true ) ? ' selected' : '';
-					$input_html .= '<option value="' . esc_attr( $opt_value ) . '"' . $selected . '>' . esc_html( $opt_label ) . '</option>';
-				}
-				$input_html .= '</select>';
-				break;
-
 			case 'checkbox_group':
 				foreach ( $field->options as $option ) {
 					$opt_value   = is_array( $option ) ? (string) ( $option['value'] ?? '' ) : '';
@@ -629,19 +538,6 @@ class CheckoutRenderer {
 				$input_html = '<input type="date" name="' . esc_attr( $effective_key ) . '" id="' . esc_attr( $effective_key ) . '" value="' . esc_attr( $value ) . '" class="input-text" title="' . esc_attr( $date_title ) . '" />';
 				break;
 
-			case 'file':
-				$accept = ! empty( $field->meta['accept'] ) ? ' accept="' . esc_attr( (string) $field->meta['accept'] ) . '"' : '';
-				$input_html = '<div class="cecfm-file-upload-wrap" data-cecfm-file-wrap="1">'
-					. '<input type="file" name="' . esc_attr( $effective_key ) . '" id="' . esc_attr( $effective_key ) . '" class="input-text cecfm-file-upload-input"' . $accept . ' />'
-					. '<label for="' . esc_attr( $effective_key ) . '" class="cecfm-file-upload-btn">' . esc_html__( 'Choose file', 'coderembassy-checkout-fields-manager' ) . '</label>'
-					. '<span class="cecfm-file-upload-name" data-cecfm-file-name="1" data-empty-label="' . esc_attr__( 'No file selected', 'coderembassy-checkout-fields-manager' ) . '">' . esc_html__( 'No file selected', 'coderembassy-checkout-fields-manager' ) . '</span>'
-					. '</div>';
-				break;
-
-			case 'repeater':
-				$input_html = $this->renderRepeaterField( $field, $label );
-				break;
-
 			case 'heading':
 				$input_html = '<h3>' . esc_html( $label ) . '</h3>';
 				break;
@@ -650,15 +546,18 @@ class CheckoutRenderer {
 				$input_html = '<p>' . esc_html( $description ) . '</p>';
 				break;
 
-			case 'custom_price':
-				$currency   = function_exists( 'get_woocommerce_currency_symbol' ) ? get_woocommerce_currency_symbol() : '$';
-				$input_html = '<span class="cecfm-currency">' . esc_html( $currency ) . '</span>'
-					. '<input data-field-type="custom_price" type="number" name="' . esc_attr( $effective_key ) . '" id="' . esc_attr( $effective_key ) . '" step="0.01" min="0" value="' . esc_attr( $value ) . '" class="input-text" />';
-				break;
-
 			default:
-				$type       = in_array( $field->type, array( 'text', 'email', 'tel', 'number', 'url' ), true ) ? $field->type : 'text';
-				$input_html = '<input type="' . esc_attr( $type ) . '" name="' . esc_attr( $effective_key ) . '" id="' . esc_attr( $effective_key ) . '" value="' . esc_attr( $value ) . '" placeholder="' . esc_attr( $placeholder ) . '" class="input-text" />';
+				if ( ! in_array( $field->type, array( 'text', 'email', 'tel', 'phone', 'number', 'url' ), true ) ) {
+					// A type this plugin does not implement — an add-on supplies it
+					// and draws the markup through the cecfm_field_html filter.
+					// Falling back to a text input here would silently downgrade
+					// the field and mangle its value on submit.
+					$input_html = '';
+					break;
+				}
+
+				$input_type = ( 'phone' === $field->type ) ? 'tel' : $field->type;
+				$input_html = '<input type="' . esc_attr( $input_type ) . '" name="' . esc_attr( $effective_key ) . '" id="' . esc_attr( $effective_key ) . '" value="' . esc_attr( $value ) . '" placeholder="' . esc_attr( $placeholder ) . '" class="input-text" />';
 		}
 
 		$classes             = trim( 'form-row ' . $css_class . ' cecfm-field cecfm-field--' . sanitize_html_class( $field->type ) . ' cecfm-field--' . sanitize_html_class( $field->field_key ) . ( $is_required ? ' is-required' : '' ) );
@@ -701,95 +600,8 @@ class CheckoutRenderer {
 			. ( '' !== (string) $description ? '<span class="cecfm-field-description">' . esc_html( $description ) . '</span>' : '' )
 			. '</span></p>';
 
-		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $wrapper is composed of escaped fragments and passed through wp_kses_post.
-		echo \wp_kses_post( $this->validationEngine->filterFieldHtml( $wrapper, $field, $context ) );
-	}
-
-	/**
-	 * @return string HTML only (no outer form-row wrapper).
-	 */
-	private function renderRepeaterField( CECFM_Field $field, string $display_label ): string {
-		$sub_fields = $field->meta['sub_fields'] ?? array();
-		$max_rows   = isset( $field->meta['repeater_max_rows'] ) ? (int) $field->meta['repeater_max_rows'] : 0;
-
-		if ( empty( $sub_fields ) || ! is_array( $sub_fields ) ) {
-			return '';
-		}
-
-		$key      = $field->field_key;
-		$key_attr = esc_attr( $key );
-		$label    = esc_html( $display_label );
-		$required = $field->required ? ' <abbr class="required" title="required">*</abbr>' : '';
-		$max_attr = $max_rows > 0 ? ' data-max-rows="' . (int) $max_rows . '"' : '';
-
-		$template_html = $this->buildRepeaterRow( $key, '__IDX__', $sub_fields, true, $field->field_key );
-		$next_idx      = 1;
-
-		$out  = '<div class="cecfm-repeater-wrap" id="cecfm-repeater-' . $key_attr . '"'
-			. $max_attr
-			. ' data-template="' . esc_attr( $template_html ) . '"'
-			. ' data-next-idx="' . $next_idx . '">';
-		$out .= '<label class="cecfm-repeater-label">' . $label . $required . '</label>';
-		$out .= '<div class="cecfm-repeater-rows">';
-		$out .= $this->buildRepeaterRow( $key, 0, $sub_fields, false, $field->field_key );
-		$out .= '</div>';
-		$out .= '<button type="button" class="cecfm-repeater-add" data-key="' . $key_attr . '">'
-			. esc_html__( '+ Add another', 'coderembassy-checkout-fields-manager' )
-			. '</button>';
-
-		// Inline script removed. Logic moved to checkout.js using event delegation.
-		$out          .= '</div>';
-
-		return $out;
-	}
-
-	/**
-	 * @param array<int, mixed> $sub_fields
-	 */
-	private function buildRepeaterRow( string $key, int|string $row_idx, array $sub_fields, bool $removable, string $field_key_for_i18n ): string {
-		$out = '<div class="cecfm-repeater-row">';
-
-		if ( $removable ) {
-			$out .= '<button type="button" class="cecfm-repeater-remove" title="' . esc_attr__( 'Remove row', 'coderembassy-checkout-fields-manager' ) . '">&times;</button>';
-		}
-
-		foreach ( $sub_fields as $sf ) {
-			$sf       = is_array( $sf ) ? $sf : (array) $sf;
-			$sf_key   = sanitize_key( (string) ( $sf['key'] ?? '' ) );
-			if ( '' === $sf_key ) {
-				continue;
-			}
-			$sf_label_raw = (string) ( $sf['label'] ?? '' );
-			$sf_label     = esc_html( $this->translateString( $sf_label_raw, 'field_repeater_sub_' . $field_key_for_i18n . '_' . $sf_key ) );
-			$sf_type  = (string) ( $sf['type'] ?? 'text' );
-			$sf_req   = ! empty( $sf['required'] );
-			$name     = esc_attr( $key . '[' . $row_idx . '][' . $sf_key . ']' );
-			$req_attr = $sf_req ? ' required' : '';
-			$req_star = $sf_req ? ' <abbr class="required" title="' . esc_attr__( 'required', 'coderembassy-checkout-fields-manager' ) . '">*</abbr>' : '';
-
-			$out .= '<div class="cecfm-repeater-subfield">';
-			$out .= '<label>' . $sf_label . $req_star . '</label>';
-
-			if ( 'textarea' === $sf_type ) {
-				$out .= '<textarea name="' . $name . '" class="input-text"' . $req_attr . '></textarea>';
-			} elseif ( 'checkbox' === $sf_type ) {
-				$out .= '<input type="checkbox" name="' . $name . '" value="1"' . $req_attr . ' />';
-			} else {
-				$input_type = match ( $sf_type ) {
-					'email'  => 'email',
-					'phone'  => 'tel',
-					'number' => 'number',
-					default  => 'text',
-				};
-				$out .= '<input type="' . esc_attr( $input_type ) . '" name="' . $name . '" class="input-text"' . $req_attr . ' />';
-			}
-
-			$out .= '</div>';
-		}
-
-		$out .= '</div>';
-
-		return $out;
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $wrapper is composed of escaped fragments.
+		echo $this->validationEngine->filterFieldHtml( $wrapper, $field, $context );
 	}
 
 	public function prependCartItemThumb( string $name, array $cart_item, string $cart_item_key ): string {
@@ -854,14 +666,110 @@ class CheckoutRenderer {
 		\wp_send_json_success( array( 'count' => \WC()->cart->get_cart_contents_count() ) );
 	}
 
-	public function applyFees( \WC_Cart $cart ): void {
-		$context = $this->buildContext();
-		$fields  = $this->fieldRepository->findAll( array( 'enabled' => true ) );
-		$fees    = $this->pricingEngine->calculateFees( $fields, $context );
+	/**
+	 * The active customer type slug for this request.
+	 *
+	 * Customer types are a Pro capability. Free has no type engine, so this
+	 * always resolves to an empty string unless the add-on answers the filter —
+	 * and an empty slug means "no segmentation", which is the correct free
+	 * behaviour: every enabled field is shown to everyone.
+	 */
+	/**
+	 * The active customer type slug for this request.
+	 *
+	 * The free plugin manages a fixed Private/Company pair, so this resolves
+	 * from its own manager. The filter stays so an add-on with more types can
+	 * override the choice.
+	 */
+	private function currentTypeSlug(): string {
+		$slug = $this->customerTypeManager->getCurrentTypeSlug();
 
-		foreach ( $fees as $fee ) {
-			$cart->add_fee( $fee['name'], $fee['amount'], $fee['tax'], $fee['id'] );
+		return (string) \apply_filters(
+			ExtensionPoints::CURRENT_CUSTOMER_TYPE,
+			$slug,
+			array( 'source' => 'renderer' )
+		);
+	}
+
+
+	public function renderCustomerTypeSwitcher(): void {
+		$types = $this->customerTypeManager->getAllTypes();
+		if ( empty( $types ) || count( $types ) < 2 ) {
+			return;
 		}
+
+		$current_type   = $this->customerTypeManager->getCurrentTypeSlug();
+		$settings       = $this->getSettings();
+		$switcher_label = isset( $settings['customer_type_switcher_label'] ) && '' !== $settings['customer_type_switcher_label']
+			? $settings['customer_type_switcher_label']
+			: \__( 'Customer Type', 'coderembassy-checkout-fields-manager' );
+		$display_type   = $settings['switcher_display_type'] ?? 'buttons';
+
+		echo '<div class="cecfm-type-switcher">';
+		echo '<label>' . esc_html( $switcher_label ) . '</label>';
+
+		if ( 'radio' === $display_type ) {
+			echo '<div class="cecfm-type-radios">';
+			foreach ( $types as $type ) {
+				$uid = 'cecfm-type-radio-' . \sanitize_key( (string) $type->slug );
+				echo '<label class="cecfm-type-radio-label" for="' . esc_attr( $uid ) . '">';
+				echo '<input type="radio" id="' . esc_attr( $uid ) . '" name="cecfm_customer_type_radio" value="' . esc_attr( $type->slug ) . '"' . checked( $type->slug, $current_type, false ) . ' data-type="' . esc_attr( $type->slug ) . '" class="cecfm-type-radio" />';
+				echo ' ' . esc_html( $type->label );
+				echo '</label>';
+			}
+			echo '</div>';
+		} else {
+			echo '<div class="cecfm-type-buttons">';
+			foreach ( $types as $type ) {
+				$is_active = $type->slug === $current_type;
+				echo '<button type="button" class="cecfm-type-btn' . ( $is_active ? ' is-active' : '' ) . '" data-type="' . esc_attr( $type->slug ) . '">';
+				echo esc_html( $type->label );
+				echo '</button>';
+			}
+			echo '</div>';
+		}
+
+		wp_nonce_field( 'cecfm_set_type', '_cecfm_type_nonce', false );
+		echo '<input type="hidden" name="cecfm_customer_type" id="cecfm-current-type-input" value="' . esc_attr( $current_type ) . '" />';
+
+		$css_parts = array();
+		if ( ! empty( $settings['switcher_bg_color'] ) ) {
+			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { background-color: ' . \sanitize_hex_color( (string) $settings['switcher_bg_color'] ) . ' !important; }';
+		}
+		if ( ! empty( $settings['switcher_active_color'] ) ) {
+			$active      = \sanitize_hex_color( (string) $settings['switcher_active_color'] );
+			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn.is-active, .cecfm-type-switcher .cecfm-type-btn:focus { background-color: ' . $active . ' !important; border-color: ' . $active . ' !important; }';
+		}
+		if ( ! empty( $settings['switcher_border_color'] ) ) {
+			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { border-color: ' . \sanitize_hex_color( (string) $settings['switcher_border_color'] ) . ' !important; }';
+		}
+		if ( isset( $settings['switcher_border_radius'] ) && '' !== (string) $settings['switcher_border_radius'] ) {
+			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { border-radius: ' . absint( $settings['switcher_border_radius'] ) . 'px !important; }';
+		}
+		if ( ! empty( $settings['switcher_shadow'] ) ) {
+			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important; }';
+			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn.is-active { box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important; }';
+		}
+		if ( ! empty( $settings['switcher_font_color'] ) ) {
+			$font_color  = \sanitize_hex_color( (string) $settings['switcher_font_color'] );
+			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { color: ' . $font_color . ' !important; }';
+			$css_parts[] = '.cecfm-type-switcher .cecfm-type-radio-label { color: ' . $font_color . ' !important; }';
+		}
+		if ( ! empty( $settings['switcher_font_size'] ) && (int) $settings['switcher_font_size'] > 0 ) {
+			$font_size   = absint( $settings['switcher_font_size'] );
+			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { font-size: ' . $font_size . 'px !important; }';
+			$css_parts[] = '.cecfm-type-switcher .cecfm-type-radio-label { font-size: ' . $font_size . 'px !important; }';
+		}
+		if ( ! empty( $settings['switcher_padding'] ) ) {
+			$padding     = \sanitize_text_field( (string) $settings['switcher_padding'] );
+			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { padding: ' . $padding . ' !important; }';
+		}
+		if ( ! empty( $settings['switcher_margin'] ) ) {
+			$margin      = \sanitize_text_field( (string) $settings['switcher_margin'] );
+			$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { margin: ' . $margin . ' !important; }';
+		}
+		// Styles moved to wp_add_inline_style in FrontendModule.
+		echo '</div>';
 	}
 
 	public function ajaxSetCustomerType(): void {
@@ -883,6 +791,23 @@ class CheckoutRenderer {
 		}
 		$this->customerTypeManager->setCurrentType( $type );
 		wp_send_json_success( array( 'type' => $type ) );
+	}
+
+	public function applyFees( \WC_Cart $cart ): void {
+		$context = $this->buildContext();
+		$fields  = $this->fieldRepository->findAll( array( 'enabled' => true ) );
+
+		/**
+		 * Add cart fees derived from checkout field values.
+		 *
+		 * Pricing is a Pro capability. This is how the add-on contributes fees
+		 * without the free plugin needing to know its rules.
+		 *
+		 * @param array    $fields  Enabled fields.
+		 * @param array    $context Current checkout context.
+		 * @param \WC_Cart $cart    The cart being calculated.
+		 */
+		\do_action( ExtensionPoints::CART_FEES, $fields, $context, $cart );
 	}
 
 	private function buildContext(): array {
@@ -946,10 +871,9 @@ class CheckoutRenderer {
 		if ( $nonce_ok ) {
 			$posted_type = \sanitize_key( \wp_unslash( (string) ( $_POST['cecfm_customer_type'] ?? '' ) ) );
 			if ( '' !== $posted_type ) {
-				$this->customerTypeManager->setCurrentType( $posted_type );
 			}
 		}
-		$type_slug = '' !== $posted_type ? $posted_type : $this->customerTypeManager->getCurrentTypeSlug();
+		$type_slug = '' !== $posted_type ? $posted_type : $this->currentTypeSlug();
 
 		$this->context_cache = array(
 			'customer_type'   => $type_slug,
@@ -1060,6 +984,72 @@ class CheckoutRenderer {
 		}
 
 		return $value;
+	}
+
+	/**
+	 * Bring back fields WooCommerce hides through its own settings.
+	 *
+	 * WooCommerce removes Company, Address line 2 and Phone in
+	 * WC_Countries::get_address_fields() when their setting is "hidden", which
+	 * happens before woocommerce_checkout_fields runs. The field therefore never
+	 * reaches this filter, and switching it on in Native Fields silently did
+	 * nothing — the admin showed it enabled while checkout never rendered it.
+	 *
+	 * When our own configuration says the field is enabled, it is re-added here
+	 * so the toggle means what it says.
+	 *
+	 * @param array<string, array<string, mixed>> $fields
+	 * @param array<string, mixed>                $overrides
+	 * @return array<string, array<string, mixed>>
+	 */
+	private function restoreHiddenOptionalFields( array $fields, array $overrides ): array {
+		$optional = array(
+			'billing_company'    => array( 'group' => 'billing',  'setting' => 'woocommerce_checkout_company_field',    'priority' => 30,  'autocomplete' => 'organization' ),
+			'shipping_company'   => array( 'group' => 'shipping', 'setting' => 'woocommerce_checkout_company_field',    'priority' => 30,  'autocomplete' => 'organization' ),
+			'billing_address_2'  => array( 'group' => 'billing',  'setting' => 'woocommerce_checkout_address_2_field',  'priority' => 60,  'autocomplete' => 'address-line2' ),
+			'shipping_address_2' => array( 'group' => 'shipping', 'setting' => 'woocommerce_checkout_address_2_field',  'priority' => 60,  'autocomplete' => 'address-line2' ),
+			'billing_phone'      => array( 'group' => 'billing',  'setting' => 'woocommerce_checkout_phone_field',      'priority' => 100, 'autocomplete' => 'tel' ),
+		);
+
+		$labels = array(
+			'billing_company'    => \__( 'Company name', 'coderembassy-checkout-fields-manager' ),
+			'shipping_company'   => \__( 'Company name', 'coderembassy-checkout-fields-manager' ),
+			'billing_address_2'  => \__( 'Apartment, suite, unit, etc.', 'coderembassy-checkout-fields-manager' ),
+			'shipping_address_2' => \__( 'Apartment, suite, unit, etc.', 'coderembassy-checkout-fields-manager' ),
+			'billing_phone'      => \__( 'Phone', 'coderembassy-checkout-fields-manager' ),
+		);
+
+		foreach ( $optional as $key => $def ) {
+			$group = $def['group'];
+
+			// Already present, or we have no opinion about it.
+			if ( isset( $fields[ $group ][ $key ] ) || ! isset( $overrides[ $key ] ) ) {
+				continue;
+			}
+
+			// Only re-add what the merchant switched on here.
+			if ( ! ( ! array_key_exists( 'enabled', $overrides[ $key ] ) || ! empty( $overrides[ $key ]['enabled'] ) ) ) {
+				continue;
+			}
+
+			// Nothing to restore unless WooCommerce is the one hiding it.
+			if ( 'hidden' !== \get_option( $def['setting'], '' ) ) {
+				continue;
+			}
+
+			$override = $overrides[ $key ];
+
+			$fields[ $group ][ $key ] = array(
+				'label'        => ! empty( $override['label'] ) ? (string) $override['label'] : ( $labels[ $key ] ?? $key ),
+				'placeholder'  => (string) ( $override['placeholder'] ?? '' ),
+				'required'     => ! empty( $override['required'] ),
+				'class'        => array( 'form-row-wide' ),
+				'autocomplete' => $def['autocomplete'],
+				'priority'     => isset( $override['priority'] ) ? (int) $override['priority'] : $def['priority'],
+			);
+		}
+
+		return $fields;
 	}
 }
 	 

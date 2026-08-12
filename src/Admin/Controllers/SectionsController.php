@@ -4,6 +4,7 @@ namespace CoderEmbassy\CheckoutFieldsManager\Admin\Controllers;
 defined( 'ABSPATH' ) || exit;
 
 use CoderEmbassy\CheckoutFieldsManager\Models\CECFM_Section;
+use CoderEmbassy\CheckoutFieldsManager\Modules\Licensing\FeatureGate;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Sections\SectionRepository;
 use WP_REST_Request;
 use WP_REST_Server;
@@ -94,7 +95,25 @@ class SectionsController extends BaseController {
 			)
 		);
 
-		// No section limits.
+		// Free allows one section so the feature is visible and usable; the add-on
+		// raises the ceiling. Enforced here as well as in the UI, because a
+		// UI-only limit is bypassed by calling the REST route directly.
+		$max = FeatureGate::maxSections();
+		if ( count( $this->repository->findAll() ) >= $max ) {
+			return $this->error(
+				sprintf(
+					/* translators: %d: maximum number of sections allowed on the current plan. */
+					_n(
+						'Your plan allows %d custom section. Upgrade to add more.',
+						'Your plan allows %d custom sections. Upgrade to add more.',
+						$max,
+						'coderembassy-checkout-fields-manager'
+					),
+					$max
+				),
+				403
+			);
+		}
 
 		$id = $this->repository->save( $section );
 		$item = $this->repository->findById( $id );

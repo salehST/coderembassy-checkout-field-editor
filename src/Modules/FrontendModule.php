@@ -5,34 +5,39 @@ defined( 'ABSPATH' ) || exit;
 
 use CoderEmbassy\CheckoutFieldsManager\Abstracts\AbstractModule;
 use CoderEmbassy\CheckoutFieldsManager\Frontend\BlocksIntegration;
+use CoderEmbassy\CheckoutFieldsManager\Frontend\CheckoutContext;
 use CoderEmbassy\CheckoutFieldsManager\Frontend\CheckoutRenderer;
-use CoderEmbassy\CheckoutFieldsManager\Modules\Conditions\ConditionEngine;
 use CoderEmbassy\CheckoutFieldsManager\Modules\CustomerTypes\CustomerTypeManager;
+use CoderEmbassy\CheckoutFieldsManager\Modules\CustomerTypes\CustomerTypeRepository;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\FieldRepository;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\VisibilityResolver;
 use CoderEmbassy\CheckoutFieldsManager\Modules\OrderMeta\OrderMetaHandler;
-use CoderEmbassy\CheckoutFieldsManager\Modules\Pricing\PricingEngine;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Sections\SectionRepository;
 use CoderEmbassy\CheckoutFieldsManager\Modules\Validation\ValidationEngine;
 
 class FrontendModule extends AbstractModule {
 	public function register(): void {
 		$this->container->singleton(
+			CheckoutContext::class,
+			static fn (): CheckoutContext => new CheckoutContext()
+		);
+
+		$this->container->singleton(
 			CheckoutRenderer::class,
 			fn (): CheckoutRenderer => new CheckoutRenderer(
 				$this->container->make( FieldRepository::class ),
 				$this->container->make( VisibilityResolver::class ),
 				$this->container->make( ValidationEngine::class ),
-				$this->container->make( CustomerTypeManager::class ),
 				$this->container->make( SectionRepository::class ),
-				$this->container->make( PricingEngine::class )
+				$this->container->make( CustomerTypeManager::class )
 			)
 		);
 
 		$this->container->singleton(
-			PricingEngine::class,
-			fn (): PricingEngine => new PricingEngine(
-				$this->container->make( ConditionEngine::class )
+			CustomerTypeManager::class,
+			fn (): CustomerTypeManager => new CustomerTypeManager(
+				$this->container->make( CustomerTypeRepository::class ),
+				$this->container->make( FieldRepository::class )
 			)
 		);
 
@@ -40,8 +45,7 @@ class FrontendModule extends AbstractModule {
 			BlocksIntegration::class,
 			fn (): BlocksIntegration => new BlocksIntegration(
 				$this->container->make( FieldRepository::class ),
-				$this->container->make( VisibilityResolver::class ),
-				$this->container->make( CustomerTypeManager::class )
+				$this->container->make( VisibilityResolver::class )
 			)
 		);
 
@@ -50,43 +54,34 @@ class FrontendModule extends AbstractModule {
 			fn (): OrderMetaHandler => new OrderMetaHandler(
 				$this->container->make( FieldRepository::class ),
 				$this->container->make( VisibilityResolver::class ),
-				$this->container->make( ConditionEngine::class ),
-				$this->container->make( CustomerTypeManager::class ),
+				$this->container->make( CheckoutContext::class ),
 				$this->container->make( SectionRepository::class )
 			)
 		);
-
-		if ( ! $this->container->has( ConditionEngine::class ) ) {
-			$this->container->singleton(
-				ConditionEngine::class,
-				static fn (): ConditionEngine => new ConditionEngine()
-			);
-		}
-
-		$this->container->make( ConditionEngine::class );
-
 	}
 
 	public function boot(): void {
 		$renderer = $this->container->make( CheckoutRenderer::class );
 		$field_repository = $this->container->make( FieldRepository::class );
-		$type_manager = $this->container->make( CustomerTypeManager::class );
 
 		$settings_raw = \get_option( 'cecfm_settings', '' );
 		$settings     = is_string( $settings_raw ) && '' !== $settings_raw
 			? ( json_decode( $settings_raw, true ) ?? array() )
 			: array();
 
-		$switcher_pos = $settings['switcher_position'] ?? 'before_form';
-
 		\add_filter( 'woocommerce_checkout_fields', array( $renderer, 'filterCheckoutFields' ), 20, 1 );
 		\add_filter( 'woocommerce_form_field', array( $renderer, 'filterNativeFieldHtml' ), 20, 4 );
 
+		// Customer type switcher. This plugin manages a fixed Private/Company
+		// pair; the renderer only outputs it when more than one type exists.
+		$switcher_pos = $settings['switcher_position'] ?? 'before_form';
 		if ( 'inside_billing' === $switcher_pos ) {
 			\add_action( 'woocommerce_checkout_billing', array( $renderer, 'renderCustomerTypeSwitcher' ), 1, 0 );
 		} else {
 			\add_action( 'woocommerce_before_checkout_form', array( $renderer, 'renderCustomerTypeSwitcher' ), 10, 0 );
 		}
+		\add_action( 'wp_ajax_cecfm_set_customer_type', array( $renderer, 'ajaxSetCustomerType' ) );
+		\add_action( 'wp_ajax_nopriv_cecfm_set_customer_type', array( $renderer, 'ajaxSetCustomerType' ) );
 
 		\add_action( 'woocommerce_before_checkout_form', array( $renderer, 'renderSectionsBeforeCheckoutForm' ), 20, 0 );
 		\add_action( 'woocommerce_after_checkout_form', array( $renderer, 'renderSectionsAfterCheckoutForm' ), 10, 0 );
@@ -120,8 +115,6 @@ class FrontendModule extends AbstractModule {
 		\add_action( 'woocommerce_checkout_after_order_review', array( $renderer, 'renderFieldsAfterOrderReview' ), 20, 0 );
 		\add_action( 'woocommerce_after_checkout_form', array( $renderer, 'renderFieldsAfterCheckoutForm' ), 20, 0 );
 		\add_action( 'woocommerce_cart_calculate_fees', array( $renderer, 'applyFees' ), 10, 1 );
-		\add_action( 'wp_ajax_cecfm_set_customer_type', array( $renderer, 'ajaxSetCustomerType' ) );
-		\add_action( 'wp_ajax_nopriv_cecfm_set_customer_type', array( $renderer, 'ajaxSetCustomerType' ) );
 		// Add multipart/form-data enctype to checkout form when a file upload field exists.
 		\add_action( 'woocommerce_checkout_before_customer_details', array( $renderer, 'maybeAddFileEnctypeScript' ), 1, 0 );
 
@@ -168,7 +161,7 @@ class FrontendModule extends AbstractModule {
 
 		\add_action(
 			'woocommerce_init',
-			function () use ( $settings, $field_repository, $type_manager ): void {
+			function () use ( $settings, $field_repository ): void {
 				if ( empty( $settings['enable_blocks_support'] ) ) {
 					return;
 				}
@@ -184,36 +177,6 @@ class FrontendModule extends AbstractModule {
 					}
 					return in_array( (string) $field->type, $blocks_supported_types, true );
 				};
-				$types = $type_manager->getAllTypes();
-				if ( ! empty( $types ) ) {
-					$type_options = array();
-					foreach ( $types as $type ) {
-						$slug  = sanitize_key( (string) $type->slug );
-						$label = sanitize_text_field( (string) $type->label );
-						if ( '' === $slug || '' === $label ) {
-							continue;
-						}
-						$type_options[] = array(
-							'value' => $slug,
-							'label' => $label,
-						);
-					}
-					if ( ! empty( $type_options ) ) {
-						\woocommerce_register_additional_checkout_field(
-							array(
-								'id'       => 'coderembassy-checkout-fields-manager/cecfm_customer_type',
-								'label'    => isset( $settings['customer_type_switcher_label'] ) && '' !== (string) $settings['customer_type_switcher_label']
-									? (string) $settings['customer_type_switcher_label']
-									: __( 'Customer Type', 'coderembassy-checkout-fields-manager' ),
-								'location' => 'order',
-								'type'     => 'select',
-								'options'  => $type_options,
-								'required' => false,
-							)
-						);
-						$registered['coderembassy-checkout-fields-manager/cecfm_customer_type'] = true;
-					}
-				}
 				foreach ( $field_repository->findAll( array( 'enabled' => true ) ) as $field ) {
 					$field_key = \sanitize_key( (string) $field->field_key );
 					if ( '' === $field_key || 'cecfm_customer_type' === $field_key ) {
@@ -477,21 +440,30 @@ class FrontendModule extends AbstractModule {
 					$css_parts[] = '.cecfm-type-switcher .cecfm-type-radio-label { font-size: ' . $font_size . 'px !important; }';
 				}
 				if ( ! empty( $settings['switcher_padding'] ) ) {
-					$padding     = \sanitize_text_field( (string) $settings['switcher_padding'] );
-					$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { padding: ' . $padding . ' !important; }';
+					$padding = self::sanitizeCssLengthShorthand( (string) $settings['switcher_padding'] );
+					if ( '' !== $padding ) {
+						$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { padding: ' . $padding . ' !important; }';
+					}
 				}
 				if ( ! empty( $settings['switcher_margin'] ) ) {
-					$margin      = \sanitize_text_field( (string) $settings['switcher_margin'] );
-					$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { margin: ' . $margin . ' !important; }';
+					$margin = self::sanitizeCssLengthShorthand( (string) $settings['switcher_margin'] );
+					if ( '' !== $margin ) {
+						$css_parts[] = '.cecfm-type-switcher .cecfm-type-btn { margin: ' . $margin . ' !important; }';
+					}
 				}
 				if ( ! empty( $css_parts ) ) {
-					\wp_add_inline_style( 'cecfm-frontend', implode( ' ', $css_parts ) );
+					$switcher_css = self::sanitizeInlineCssRules( implode( ' ', $css_parts ) );
+					if ( '' !== $switcher_css ) {
+						\wp_add_inline_style( 'cecfm-frontend', $switcher_css );
+					}
 				}
 
 				// Output merchant-authored custom CSS.
 				if ( ! empty( $settings['custom_css'] ) ) {
-					$safe_css = wp_strip_all_tags( (string) $settings['custom_css'] );
-					\wp_add_inline_style( 'cecfm-frontend', $safe_css );
+					$safe_css = self::sanitizeInlineCssRules( (string) $settings['custom_css'] );
+					if ( '' !== $safe_css ) {
+						\wp_add_inline_style( 'cecfm-frontend', $safe_css );
+					}
 				}
 
 				if ( ! empty( $settings['order_review_show_thumbs'] ) || ! empty( $settings['order_review_show_quantity'] ) ) {
@@ -668,6 +640,56 @@ class FrontendModule extends AbstractModule {
 			},
 			20
 		);
+	}
+
+	private static function sanitizeCssLengthShorthand( string $value ): string {
+		$value = trim( \wp_strip_all_tags( $value ) );
+		if ( '' === $value ) {
+			return '';
+		}
+
+		$pattern = '/^-?(?:\d+(?:\.\d+)?|\.\d+)(?:px|em|rem|%|vh|vw)?(?:\s+-?(?:\d+(?:\.\d+)?|\.\d+)(?:px|em|rem|%|vh|vw)?){0,3}$/';
+		return 1 === preg_match( $pattern, $value ) ? $value : '';
+	}
+
+	private static function sanitizeInlineCssRules( string $css ): string {
+		$css = trim( \wp_kses_no_null( $css ) );
+		if ( '' === $css ) {
+			return '';
+		}
+
+		$css = (string) preg_replace( '#</?style[^>]*>#i', '', $css );
+
+		$rules      = explode( '}', $css );
+		$safe_rules = array();
+
+		foreach ( $rules as $rule ) {
+			if ( ! str_contains( $rule, '{' ) ) {
+				continue;
+			}
+
+			$parts        = explode( '{', $rule, 2 );
+			$selector_raw = trim( (string) ( $parts[0] ?? '' ) );
+			$decl_raw     = trim( (string) ( $parts[1] ?? '' ) );
+			if ( '' === $selector_raw || '' === $decl_raw ) {
+				continue;
+			}
+
+			$selector = (string) preg_replace( '/[^a-zA-Z0-9_\-\.\#\:\,\s>\+\~\*\[\]\(\)=\'"]/', '', $selector_raw );
+			$selector = trim( $selector );
+			if ( '' === $selector ) {
+				continue;
+			}
+
+			$declarations = \safecss_filter_attr( $decl_raw );
+			if ( '' === $declarations ) {
+				continue;
+			}
+
+			$safe_rules[] = $selector . '{' . $declarations . '}';
+		}
+
+		return implode( "\n", $safe_rules );
 	}
 }
 

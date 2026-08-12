@@ -6,25 +6,8 @@ import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } 
 import { CSS } from '@dnd-kit/utilities';
 import { store } from '../../store';
 import { createField, updateField, getRevisions, rollbackRevision } from '../../api/client';
-import ConditionEditor from './ConditionEditor';
-
-const FIELD_TYPES = [
-	{ value: 'text',     label: 'Text' },
-	{ value: 'textarea', label: 'Textarea' },
-	{ value: 'select',   label: 'Select (dropdown)' },
-	{ value: 'radio',    label: 'Radio buttons' },
-	{ value: 'checkbox', label: 'Checkbox' },
-	{ value: 'multiselect',    label: 'Multi-select' },
-	{ value: 'checkbox_group', label: 'Checkbox group' },
-	{ value: 'number',   label: 'Number' },
-	{ value: 'email',    label: 'Email' },
-	{ value: 'phone',    label: 'Phone' },
-	{ value: 'date',     label: 'Date picker' },
-	{ value: 'file',     label: 'File upload' },
-	{ value: 'hidden',   label: 'Hidden' },
-	{ value: 'heading',  label: 'Heading / Divider' },
-	{ value: 'repeater', label: 'Repeater' },
-];
+import { fieldTypes as FIELD_TYPES, upgradeUrl } from '../../config';
+import { getFieldTabs, getFieldPanels } from '../../extensions';
 
 const BLOCK_FIELD_TYPES = [ 'text', 'select', 'checkbox' ];
 
@@ -95,13 +78,16 @@ export default function FieldEditor() {
 	const isNewField   = typeof editingFieldId === 'string' && editingFieldId.startsWith( 'new' );
 	const newFieldMode = editingFieldId === 'new:block' ? 'block' : 'classic';
 	const isBlockMode  = isNewField && newFieldMode === 'block';
+	const current = isNewField ? null : fields.find( ( f ) => String( f.id ) === String( editingFieldId ) );
+	const [ local, setLocal ]    = useState( blank );
+
+	// Must follow the `local` declaration — reading a const before it is declared
+	// throws. It stayed hidden because && short-circuits for new fields, so only
+	// Edit crashed.
 	const isExistingBlock = ! isNewField && local.meta?.blocks_enabled === true;
 	const formTitle = isNewField
 		? ( isBlockMode ? __( 'Add New Block Field', 'coderembassy-checkout-fields-manager' ) : __( 'Add New Classic Field', 'coderembassy-checkout-fields-manager' ) )
 		: ( isExistingBlock ? __( 'Edit Block Field', 'coderembassy-checkout-fields-manager' ) : __( 'Edit Classic Field', 'coderembassy-checkout-fields-manager' ) );
-
-	const current = isNewField ? null : fields.find( ( f ) => String( f.id ) === String( editingFieldId ) );
-	const [ local, setLocal ]    = useState( blank );
 	const [ touched, setTouched ] = useState( false );
 	const [ valueTouched, setValueTouched ] = useState( [] );
 	const [busy, setBusy] = useState( false );
@@ -274,7 +260,11 @@ useEffect( () => {
 					<label>{ __( 'Field Type', 'coderembassy-checkout-fields-manager' ) }</label>
 					<select className="cecfm-select" value={ local.type } onChange={ ( e ) => set( 'type', e.target.value ) }>
 						{ ( isBlockMode ? FIELD_TYPES.filter( ( ft ) => BLOCK_FIELD_TYPES.includes( ft.value ) ) : FIELD_TYPES )
-							.map( ( ft ) => <option key={ ft.value } value={ ft.value }>{ ft.label }</option> ) }
+							.map( ( ft ) => (
+								<option key={ ft.value } value={ ft.value } disabled={ ft.locked }>
+									{ ft.label }{ ft.locked ? __( ' — Pro', 'coderembassy-checkout-fields-manager' ) : '' }
+								</option>
+							) ) }
 					</select>
 				</div>
 				{ ! isBlockMode && (
@@ -393,6 +383,14 @@ useEffect( () => {
 			) }
 
 			{ /* Actions */ }
+			{ getFieldTabs().map( ( tab ) => (
+				<tab.render key={ tab.id } field={ local } setField={ set } isNewField={ isNewField } />
+			) ) }
+
+			{ getFieldPanels().map( ( Panel, i ) => (
+				<Panel key={ i } field={ local } setField={ set } isNewField={ isNewField } />
+			) ) }
+
 			<div className="cecfm-editor-actions">
 				<button type="button" className="cecfm-btn cecfm-btn--primary" onClick={ handleSave } disabled={ busy }>
 					{ busy ? __( 'Saving…', 'coderembassy-checkout-fields-manager' ) : __( 'Save Field', 'coderembassy-checkout-fields-manager' ) }

@@ -3,7 +3,8 @@ namespace CoderEmbassy\CheckoutFieldsManager\Admin;
 
 defined( 'ABSPATH' ) || exit;
 
-
+use CoderEmbassy\CheckoutFieldsManager\Modules\Fields\FieldTypes;
+use CoderEmbassy\CheckoutFieldsManager\Modules\Licensing\FeatureGate;
 
 class AdminPage {
 	private string $menu_slug = 'coderembassy-checkout-fields-manager';
@@ -21,7 +22,7 @@ class AdminPage {
 
 	public function enqueueAssets( string $hook_suffix ): void {
 		// Suppress other plugins' admin notices on our page.
-		if ( false !== strpos( $hook_suffix, 'coderembassy-checkout-fields-manager' ) ) {
+		if ( false !== strpos( $hook_suffix, $this->menu_slug ) ) {
 			// phpcs:ignore WordPress.WP.DiscouragedFunctions.remove_all_actions_admin_notices
 			\remove_all_actions( 'admin_notices' );
 			// phpcs:ignore WordPress.WP.DiscouragedFunctions.remove_all_actions_all_admin_notices
@@ -31,7 +32,7 @@ class AdminPage {
 	}
 
 	public function register_admin_scripts( string $hook_suffix ): void {
-		if ( false === strpos( $hook_suffix, 'coderembassy-checkout-fields-manager' ) ) {
+		if ( false === strpos( $hook_suffix, $this->menu_slug ) ) {
 			return;
 		}
 
@@ -117,6 +118,16 @@ class AdminPage {
 				'countries'            => $allowed_countries,
 				'payment_methods'      => $payment_methods,
 				'shipping_methods'     => $shipping_methods,
+				// Add-on awareness. The admin app locks what is not allowed rather
+				// than hiding it, so people can see what the Pro add-on adds.
+				'is_pro'               => FeatureGate::isPro(),
+				'features'             => FeatureGate::all(),
+				'max_sections'         => FeatureGate::maxSections(),
+				'field_types'          => FieldTypes::forAdmin(),
+				'upgrade_url'          => (string) \apply_filters(
+					'cecfm_upgrade_url',
+					'https://coderembassy.com/checkout-fields-manager/'
+				),
 			)
 		);
 	}

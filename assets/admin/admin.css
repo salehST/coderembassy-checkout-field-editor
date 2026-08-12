@@ -665,3 +665,88 @@
 @media (max-width: 600px) {
   .cecfm-stats-row { grid-template-columns: 1fr 1fr; }
 }
+
+/* ── Pro teasers ──────────────────────────────────────────────────────────
+   Shown where a Pro capability would sit. The free plugin contains no Pro
+   logic, so these describe the feature rather than disabling a real control. */
+
+.cecfm-pro-badge {
+	display: inline-block;
+	margin-left: 6px;
+	padding: 2px 7px;
+	border-radius: 999px;
+	background: var(--cecfm-violet);
+	color: #fff;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: .04em;
+	vertical-align: middle;
+}
+
+.cecfm-nav-item.is-locked .cecfm-nav-item__label { opacity: .7; }
+.cecfm-nav-item__lock {
+	margin-left: auto;
+	font-size: 14px;
+	width: 14px;
+	height: 14px;
+	opacity: .5;
+}
+
+.cecfm-pro-teaser__card {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 32px;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.cecfm-pro-teaser__list {
+	flex: 1 1 320px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.cecfm-pro-teaser__list li {
+	display: flex;
+	gap: 10px;
+	align-items: flex-start;
+	margin-bottom: 10px;
+	font-size: 13px;
+	line-height: 1.5;
+	color: var(--text);
+}
+.cecfm-pro-teaser__list .dashicons {
+	flex: 0 0 auto;
+	color: var(--cecfm-green);
+	font-size: 18px;
+	width: 18px;
+	height: 18px;
+}
+
+.cecfm-pro-teaser__cta {
+	flex: 0 0 auto;
+	text-align: center;
+}
+.cecfm-pro-teaser__cta .cecfm-help-text { margin-top: 10px; max-width: 220px; }
+
+.cecfm-pro-panel {
+	border: 1px dashed var(--border);
+	border-radius: var(--radius);
+	padding: 16px;
+	background: var(--bg);
+}
+.cecfm-pro-panel__head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 6px;
+	font-size: 13px;
+}
+.cecfm-pro-panel__head .dashicons { color: var(--muted); font-size: 16px; width: 16px; height: 16px; }
+
+.cecfm-section-header__limit {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+}

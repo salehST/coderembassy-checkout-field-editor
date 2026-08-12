@@ -19,14 +19,14 @@ import { store } from '../../store';
 import { getNativeFields, saveNativeFields } from '../../api/client';
 
 const GROUPS = [
-	{ key: 'billing',  label: __( 'Billing',  'coderembassy-checkout-fields-manager' ) },
+	{ key: 'billing',  label: __( 'Billing', 'coderembassy-checkout-fields-manager' ) },
 	{ key: 'shipping', label: __( 'Shipping', 'coderembassy-checkout-fields-manager' ) },
 	{ key: 'order',    label: __( 'Additional', 'coderembassy-checkout-fields-manager' ) },
 ];
 
 const WIDTH_OPTIONS = [
-	{ value: 'full',       label: __( 'Full width',   'coderembassy-checkout-fields-manager' ) },
-	{ value: 'half_first', label: __( 'Half (left)',  'coderembassy-checkout-fields-manager' ) },
+	{ value: 'full',       label: __( 'Full width', 'coderembassy-checkout-fields-manager' ) },
+	{ value: 'half_first', label: __( 'Half (left)', 'coderembassy-checkout-fields-manager' ) },
 	{ value: 'half_last',  label: __( 'Half (right)', 'coderembassy-checkout-fields-manager' ) },
 ];
 
