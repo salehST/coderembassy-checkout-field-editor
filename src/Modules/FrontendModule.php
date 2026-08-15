@@ -191,7 +191,17 @@ class FrontendModule extends AbstractModule {
 						continue;
 					}
 
+					// The block checkout has its own three zones, which do not map
+					// onto the classic checkout areas — so a block field carries
+					// its own location and that wins. Fields saved before the
+					// control existed fall back to deriving it from the classic
+					// area, which is the behaviour they already had.
 					$location = ( 'billing' === $field->section || 'shipping' === $field->section ) ? 'address' : 'order';
+
+					$chosen_location = isset( $field->meta['blocks_location'] ) ? (string) $field->meta['blocks_location'] : '';
+					if ( in_array( $chosen_location, array( 'contact', 'address', 'order' ), true ) ) {
+						$location = $chosen_location;
+					}
 
 					$field_type = 'text';
 					if ( 'select' === $field->type || 'radio' === $field->type ) {
@@ -284,8 +294,16 @@ class FrontendModule extends AbstractModule {
 					\woocommerce_register_additional_checkout_field( $args );
 					$registered[ $id ] = true;
 				}
+
 			},
 			20
+		);
+
+		\add_action(
+			'woocommerce_store_api_checkout_update_order_meta',
+			function ( $order ) use ( $field_repository ): void {
+				$this->copyBlockFieldValues( $order, $field_repository );
+			}
 		);
 
 		\add_filter(
@@ -690,6 +708,64 @@ class FrontendModule extends AbstractModule {
 		}
 
 		return implode( "\n", $safe_rules );
+	}
+
+	/**
+	 * Copy block checkout submissions into this plugin's own order meta.
+	 *
+	 * The Additional Checkout Fields API stores values under its own keys
+	 * (`_wc_other/…`, `_wc_billing/…`, `_wc_shipping/…`), while everything this
+	 * plugin does with a submitted value — the order screen, emails, the Thank
+	 * You page, the per-field display toggles, the add-on's analytics — reads
+	 * `_cecfm_{field_key}`. Without this the same field behaves differently
+	 * depending on which checkout the store runs.
+	 *
+	 * The originals are left in place: WooCommerce owns them and renders them
+	 * natively, so removing them would break its own display.
+	 *
+	 * @param mixed $order The order being written, as passed by the Store API.
+	 */
+	private function copyBlockFieldValues( $order, FieldRepository $field_repository ): void {
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+
+		// `_wc_additional/` is the pre-8.9 name for `_wc_other/`; orders saved
+		// by older WooCommerce still carry it.
+		$group_prefixes = array( '_wc_other/', '_wc_additional/', '_wc_billing/', '_wc_shipping/' );
+		$changed        = false;
+
+		foreach ( $field_repository->findAll( array( 'enabled' => true ) ) as $field ) {
+			if ( ! isset( $field->meta ) || ! is_array( $field->meta ) || empty( $field->meta['blocks_enabled'] ) ) {
+				continue;
+			}
+
+			$field_key = \sanitize_key( (string) $field->field_key );
+			if ( '' === $field_key ) {
+				continue;
+			}
+
+			$block_id = 'coderembassy-checkout-fields-manager/' . $field_key;
+
+			foreach ( $group_prefixes as $prefix ) {
+				// Read the stored value rather than asking the CheckoutFields
+				// service: it casts a missing checkbox to false for every group,
+				// which would make the wrong group look like a real answer.
+				$value = $order->get_meta( $prefix . $block_id, true );
+
+				if ( '' === $value || null === $value || array() === $value ) {
+					continue;
+				}
+
+				$order->update_meta_data( '_cecfm_' . $field_key, $value );
+				$changed = true;
+				break;
+			}
+		}
+
+		if ( $changed ) {
+			$order->save();
+		}
 	}
 }
 

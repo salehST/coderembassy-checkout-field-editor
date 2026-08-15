@@ -99,5 +99,22 @@ final class ExtensionPoints {
 	/** Action: fires on plugin deactivation. */
 	public const DEACTIVATE = 'cecfm_deactivate';
 
+	/**
+	 * Filter: declare additional settings.
+	 *
+	 * Settings live in this plugin's single option, so an add-on must declare
+	 * any key it owns as `key => array( type, default )` or the value is
+	 * dropped on save. Types: bool, key, text, textarea, raw, hex, absint,
+	 * absint_or_empty.
+	 */
+	public const SETTINGS_SCHEMA = 'cecfm_settings_schema';
+
+	/**
+	 * Filter: how many revisions to retain per entity.
+	 *
+	 * Return zero or less to keep every revision.
+	 */
+	public const KEEP_REVISIONS = 'cecfm_keep_revisions';
+
 	private function __construct() {}
 }

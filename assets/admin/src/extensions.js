@@ -16,14 +16,16 @@ const registry = {
 	tabs: {},
 	/** @type {{name: string, version: string}|null} */
 	branding: null,
-	/** @type {Function[]} */
+	/** @type {Array<{component: Function, tab: string}>} */
 	fieldPanels: [],
-	/** @type {Function[]} */
+	/** @type {Array<{component: Function, tab: string}>} */
 	settingsPanels: [],
 	/** @type {Array<{id: string, label: string, render: Function}>} */
 	fieldTabs: [],
 	/** @type {Array<{id: string, label: string, render: Function}>} */
 	settingsTabs: [],
+	/** @type {Function[]} */
+	statCards: [],
 };
 
 /**
@@ -42,6 +44,7 @@ export function registerBranding( info ) {
 
 /** @return {{name: string, version: string}|null} */
 export function getBranding() {
+	markConsumed( 'branding' );
 	return registry.branding;
 }
 
@@ -60,6 +63,7 @@ export function registerTab( key, render ) {
 
 /** @return {Function|null} */
 export function getTab( key ) {
+	markConsumed( 'tabs' );
 	return registry.tabs[ key ] || null;
 }
 
@@ -71,26 +75,51 @@ export function getTab( key ) {
  * when it is. Registering the component itself and having the host render it
  * works regardless of where the code came from.
  */
-export function registerFieldPanel( component ) {
+/**
+ * Append a card to the field editor.
+ *
+ * @param {Function} component Rendered with { field, setField, isNewField }.
+ * @param {string}   [tab]     Tab it belongs under once the editor is tabbed.
+ */
+export function registerFieldPanel( component, tab = 'basic' ) {
 	if ( typeof component === 'function' ) {
-		registry.fieldPanels.push( component );
+		registry.fieldPanels.push( { component, tab } );
 	}
 }
 
-/** @return {Function[]} */
-export function getFieldPanels() {
-	return registry.fieldPanels;
+/**
+ * @param  {string}     [tab] Limit to one tab. Omit to get every panel.
+ * @return {Function[]}
+ */
+export function getFieldPanels( tab ) {
+	markConsumed( 'fieldPanels' );
+	return registry.fieldPanels
+		.filter( ( p ) => undefined === tab || p.tab === tab )
+		.map( ( p ) => p.component );
 }
 
-export function registerSettingsPanel( component ) {
+/**
+ * Append a settings card.
+ *
+ * @param {Function} component Rendered with { settings, setSetting }.
+ * @param {string}   [tab]     Which tab it belongs under once the Settings
+ *                             screen is in tabbed mode. Defaults to General.
+ */
+export function registerSettingsPanel( component, tab = 'general' ) {
 	if ( typeof component === 'function' ) {
-		registry.settingsPanels.push( component );
+		registry.settingsPanels.push( { component, tab } );
 	}
 }
 
-/** @return {Function[]} */
-export function getSettingsPanels() {
-	return registry.settingsPanels;
+/**
+ * @param  {string}     [tab] Limit to one tab. Omit to get every panel.
+ * @return {Function[]}
+ */
+export function getSettingsPanels( tab ) {
+	markConsumed( 'settingsPanels' );
+	return registry.settingsPanels
+		.filter( ( p ) => undefined === tab || p.tab === tab )
+		.map( ( p ) => p.component );
 }
 
 /**
@@ -108,6 +137,7 @@ export function registerFieldTab( id, label, render ) {
 
 /** @return {Array<{id: string, label: string, render: Function}>} */
 export function getFieldTabs() {
+	markConsumed( 'fieldTabs' );
 	return registry.fieldTabs;
 }
 
@@ -120,7 +150,73 @@ export function registerSettingsTab( id, label, render ) {
 
 /** @return {Array<{id: string, label: string, render: Function}>} */
 export function getSettingsTabs() {
+	markConsumed( 'settingsTabs' );
 	return registry.settingsTabs;
+}
+
+/**
+ * Add a stat card to the dashboard's counters row.
+ *
+ * The card renders itself and sources its own count, because the free plugin
+ * does not necessarily track what an add-on wants to count.
+ *
+ * @param {Function} component
+ */
+export function registerStatCard( component ) {
+	if ( typeof component === 'function' ) {
+		registry.statCards.push( component );
+	}
+}
+
+/** @return {Function[]} */
+export function getStatCards() {
+	markConsumed( 'statCards' );
+	return registry.statCards;
+}
+
+/**
+ * Development aid: report anything registered that nothing ever rendered.
+ *
+ * A registration that lands in a bucket no screen reads fails silently — the
+ * add-on looks correct, the feature is simply absent. That has happened to
+ * branding, settings tabs and settings panels, so the check is built in.
+ *
+ * Runs once, after the first paint, and only with SCRIPT_DEBUG enabled.
+ */
+const consumed = new Set();
+
+function markConsumed( bucket ) {
+	consumed.add( bucket );
+}
+
+if ( typeof window !== 'undefined' ) {
+	window.setTimeout( () => {
+		if ( ! window.CECFM_ADMIN?.script_debug ) {
+			return;
+		}
+
+		const populated = {
+			tabs: Object.keys( registry.tabs ).length,
+			branding: registry.branding ? 1 : 0,
+			fieldPanels: registry.fieldPanels.length,
+			settingsPanels: registry.settingsPanels.length,
+			fieldTabs: registry.fieldTabs.length,
+			settingsTabs: registry.settingsTabs.length,
+			statCards: registry.statCards.length,
+		};
+
+		const orphaned = Object.keys( populated ).filter(
+			( bucket ) => populated[ bucket ] > 0 && ! consumed.has( bucket )
+		);
+
+		if ( orphaned.length ) {
+			// eslint-disable-next-line no-console
+			console.warn(
+				'[cecfm] Registered but never rendered: ' + orphaned.join( ', ' ) +
+				'. The host app has no consumer for these, so the add-on feature will not appear.'
+			);
+		}
+	}, 3000 );
 }
 
 // Published for the add-on bundle, which cannot import from this one.
@@ -131,3 +227,4 @@ window.cecfm.registerFieldPanel = registerFieldPanel;
 window.cecfm.registerSettingsPanel = registerSettingsPanel;
 window.cecfm.registerFieldTab = registerFieldTab;
 window.cecfm.registerSettingsTab = registerSettingsTab;
+window.cecfm.registerStatCard = registerStatCard;

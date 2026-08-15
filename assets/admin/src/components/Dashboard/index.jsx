@@ -1,6 +1,7 @@
 import { useDispatch, useSelect } from '@wordpress/data';
 import { __ } from '@wordpress/i18n';
 import { store } from '../../store';
+import { getBranding, getStatCards } from '../../extensions';
 
 function StatCard( { icon, value, label, color } ) {
 	return (
@@ -32,12 +33,19 @@ export default function Dashboard() {
 
 	const enabledFields = fields.filter( ( f ) => f.enabled !== false ).length;
 
+	// An add-on can put its own name and version on the hero card, so an
+	// installed Pro reads as Pro rather than as the base plugin.
+	const branding = getBranding();
+	const title    = branding?.name || __( 'Checkout Fields Manager', 'coderembassy-checkout-fields-manager' );
+	const version  = branding?.version || globals?.version || '1.0.0';
+	const badge    = branding?.badge || '';
+
 	return (
 		<div className="cecfm-dashboard">
 
 			<div className="cecfm-hero-card">
 				<div className="cecfm-hero-card__body">
-					<h1 className="cecfm-hero-card__title">{ __( 'Checkout Fields Manager', 'coderembassy-checkout-fields-manager' ) }</h1>
+					<h1 className="cecfm-hero-card__title">{ title }</h1>
 					<p className="cecfm-hero-card__desc">
 						{ __( 'Customize WooCommerce checkout with extra fields, customer types, and conditional visibility.', 'coderembassy-checkout-fields-manager' ) }
 					</p>
@@ -59,7 +67,8 @@ export default function Dashboard() {
 						</button>
 					</div>
 				</div>
-				<span className="cecfm-hero-card__version">v{ globals?.version || '1.0.0' }</span>
+				{ badge && <span className="cecfm-hero-card__pro-badge">{ badge }</span> }
+				<span className="cecfm-hero-card__version">v{ version }</span>
 			</div>
 
 			<div className="cecfm-stats-row">
@@ -81,6 +90,7 @@ export default function Dashboard() {
 					label={ __( 'Customer Types', 'coderembassy-checkout-fields-manager' ) }
 					color="var(--cecfm-violet)"
 				/>
+				{ getStatCards().map( ( Card, i ) => <Card key={ i } /> ) }
 			</div>
 
 			<div className="cecfm-dashboard-grid">

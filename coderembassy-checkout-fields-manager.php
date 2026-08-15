@@ -22,7 +22,16 @@ define( 'CECFM_VERSION', '1.0.4' );
 define( 'CECFM_FILE', __FILE__ );
 define( 'CECFM_PATH', plugin_dir_path( __FILE__ ) );
 define( 'CECFM_URL', plugin_dir_url( __FILE__ ) );
-define( 'CECFM_DB_VERSION', '1.0.0' );
+
+/**
+ * Schema version, tracked separately from the plugin version.
+ *
+ * Bump this whenever a file is added to src/Database/Migrations/. The migrator
+ * compares it with the stored `cecfm_db_version` and skips every migration when
+ * the two already match, so a migration added without a bump silently never
+ * runs on an existing install.
+ */
+define( 'CECFM_DB_VERSION', '1.0.1' );
 
 $cecfm_autoload = CECFM_PATH . 'vendor/autoload.php';
 if ( file_exists( $cecfm_autoload ) ) {

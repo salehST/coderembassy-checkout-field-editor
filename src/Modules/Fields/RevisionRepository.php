@@ -6,6 +6,12 @@ defined( 'ABSPATH' ) || exit;
 use CoderEmbassy\CheckoutFieldsManager\Abstracts\AbstractRepository;
 
 class RevisionRepository extends AbstractRepository {
+	/** Revisions retained per entity before the oldest are dropped. */
+	public const KEEP_REVISIONS = 20;
+
+	/** Filter name for overriding that cap. */
+	public const PRUNE_HOOK = 'cecfm_keep_revisions';
+
 	public function __construct( \wpdb $db ) {
 		parent::__construct( $db );
 		$this->table_name = $this->db->prefix . 'cecfm_revisions';
@@ -51,7 +57,57 @@ class RevisionRepository extends AbstractRepository {
 			)
 		);
 
-		return (int) $this->db->insert_id;
+		$insert_id = (int) $this->db->insert_id;
+
+		$this->pruneRevisions( $entity_type, $entity_id );
+
+		return $insert_id;
+	}
+
+	/**
+	 * Keep only the most recent revisions for one entity.
+	 *
+	 * Every save writes a snapshot, so without a cap the table grows for the
+	 * life of the store and the history query slows down with it.
+	 */
+	private function pruneRevisions( string $entity_type, int $entity_id ): void {
+		/**
+		 * How many revisions to keep per entity. Zero or less keeps all of them.
+		 *
+		 * @param int    $limit
+		 * @param string $entity_type
+		 * @param int    $entity_id
+		 */
+		$limit = (int) \apply_filters( self::PRUNE_HOOK, self::KEEP_REVISIONS, $entity_type, $entity_id );
+
+		if ( $limit < 1 ) {
+			return;
+		}
+
+		// Find the newest id we are keeping, then drop everything older. Doing
+		// it by id avoids a DELETE with LIMIT, which MySQL rejects alongside a
+		// subquery on the same table.
+		$cutoff_query = $this->db->prepare(
+			"SELECT id FROM {$this->table_name} WHERE entity_type = %s AND entity_id = %d ORDER BY version DESC, id DESC LIMIT %d, 1",
+			$entity_type,
+			$entity_id,
+			$limit - 1
+		);
+
+		$cutoff_id = (int) $this->db->get_var( $cutoff_query );
+
+		if ( $cutoff_id < 1 ) {
+			return;
+		}
+
+		$this->db->query(
+			$this->db->prepare(
+				"DELETE FROM {$this->table_name} WHERE entity_type = %s AND entity_id = %d AND id < %d",
+				$entity_type,
+				$entity_id,
+				$cutoff_id
+			)
+		);
 	}
 
 	public function getRevisions( string $entity_type, int $entity_id ): array {

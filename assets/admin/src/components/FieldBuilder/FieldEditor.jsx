@@ -29,6 +29,10 @@ const blank = {
 
 const OPTION_TYPES = [ 'select', 'radio', 'multiselect', 'checkbox_group' ];
 
+// Mirrors the list FrontendModule registers with the Additional Checkout
+// Fields API. Anything else cannot be a block field.
+const BLOCKS_SUPPORTED_TYPES = [ 'text', 'select', 'date', 'radio', 'checkbox' ];
+
 function optionSlug( label ) {
 	return String( label || '' ).toLowerCase().replace( /[^a-z0-9]+/g, '_' ).replace( /^_|_$/g, '' );
 }
@@ -85,6 +89,10 @@ export default function FieldEditor() {
 	// throws. It stayed hidden because && short-circuits for new fields, so only
 	// Edit crashed.
 	const isExistingBlock = ! isNewField && local.meta?.blocks_enabled === true;
+
+	// True for a block field whether it is being created or edited. The block
+	// checkout ignores classic-only concepts, so several controls key off this.
+	const isBlockField = isBlockMode || isExistingBlock;
 	const formTitle = isNewField
 		? ( isBlockMode ? __( 'Add New Block Field', 'coderembassy-checkout-fields-manager' ) : __( 'Add New Classic Field', 'coderembassy-checkout-fields-manager' ) )
 		: ( isExistingBlock ? __( 'Edit Block Field', 'coderembassy-checkout-fields-manager' ) : __( 'Edit Classic Field', 'coderembassy-checkout-fields-manager' ) );
@@ -129,6 +137,39 @@ useEffect( () => {
 }, [ editingFieldId, showRevisions ] );
 
 	const set = ( k, v ) => setLocal( ( p ) => ( { ...p, [ k ]: v } ) );
+
+	// Validation rules live in one object on the field. An empty input clears
+	// its rule rather than storing "", which the engine would read as a limit.
+	const rules = local.validation_rules && ! Array.isArray( local.validation_rules )
+		? local.validation_rules
+		: {};
+
+	const setRule = ( key, value, cast = 'number' ) => {
+		const next = { ...rules };
+		if ( undefined === value || '' === value ) {
+			delete next[ key ];
+		} else if ( true === value ) {
+			next[ key ] = true;
+		} else {
+			next[ key ] = 'string' === cast ? value : Number( value );
+		}
+		set( 'validation_rules', next );
+	};
+
+	// Per-field display flags live in the field's meta and default to on, which
+	// is how the order-meta handler reads them.
+	const meta = local.meta && ! Array.isArray( local.meta ) ? local.meta : {};
+	const metaBool = ( key ) => ( undefined === meta[ key ] ? true : !! meta[ key ] );
+	const setMeta  = ( key, value ) => set( 'meta', { ...meta, [ key ]: !! value } );
+
+	const [ editorTab, setEditorTab ] = useState( 'basic' );
+
+	const editorTabs = [
+		{ id: 'basic', label: __( 'Basic', 'coderembassy-checkout-fields-manager' ) },
+		{ id: 'visibility', label: __( 'Visibility', 'coderembassy-checkout-fields-manager' ) },
+		...( isBlockMode ? [] : [ { id: 'validation', label: __( 'Validation', 'coderembassy-checkout-fields-manager' ) } ] ),
+		...getFieldTabs().map( ( t ) => ( { id: t.id, label: t.label } ) ),
+	];
 	const toggleCustomerType = ( slug ) => {
 		setLocal( ( p ) => {
 			const currentTypes = Array.isArray( p.customer_types ) ? p.customer_types : [];
@@ -225,6 +266,23 @@ useEffect( () => {
 				{ formTitle }
 			</h3>
 
+			<div className="cecfm-editor-tabs" role="tablist">
+				{ editorTabs.map( ( t ) => (
+					<button
+						key={ t.id }
+						type="button"
+						role="tab"
+						aria-selected={ editorTab === t.id }
+						className={ `cecfm-editor-tab${ editorTab === t.id ? ' is-active' : '' }` }
+						onClick={ () => setEditorTab( t.id ) }
+					>
+						{ t.label }
+					</button>
+				) ) }
+			</div>
+
+			{ 'basic' === editorTab && ( <>
+
 			{ /* Row 1: Label + Field Key */ }
 			<div className="cecfm-card-grid">
 				<div className="cecfm-field-group">
@@ -304,7 +362,7 @@ useEffect( () => {
 				</div>
 			) }
 
-			{ isBlockMode && (
+			{ isBlockField && (
 				<div className="cecfm-field-group">
 					<label>{ __( 'Blocks checkout location', 'coderembassy-checkout-fields-manager' ) }</label>
 					<p className="cecfm-help-text">
@@ -345,14 +403,6 @@ useEffect( () => {
 				<input className="cecfm-input" value={ local.description || '' } placeholder={ __( 'Shown below the field on checkout (optional)', 'coderembassy-checkout-fields-manager' ) } onChange={ ( e ) => set( 'description', e.target.value ) } />
 			</div>
 
-			{ /* Required toggle */ }
-			<div className="cecfm-field-group cecfm-field-group--inline">
-				<label>
-					<input type="checkbox" checked={ !! local.required } onChange={ () => set( 'required', ! local.required ) } />
-					{ ' ' }{ __( 'Required field', 'coderembassy-checkout-fields-manager' ) }
-				</label>
-			</div>
-
 			{ OPTION_TYPES.includes( local.type ) && (
 				<div className="cecfm-field-group">
 					<label>{ __( 'Options', 'coderembassy-checkout-fields-manager' ) }</label>
@@ -382,13 +432,166 @@ useEffect( () => {
 				</div>
 			) }
 
-			{ /* Actions */ }
-			{ getFieldTabs().map( ( tab ) => (
-				<tab.render key={ tab.id } field={ local } setField={ set } isNewField={ isNewField } />
+			{ getFieldPanels( 'basic' ).map( ( Panel, i ) => (
+				<Panel key={ `basic-${ i }` } field={ local } setField={ set } isNewField={ isNewField } isBlockField={ isBlockField } />
 			) ) }
 
-			{ getFieldPanels().map( ( Panel, i ) => (
-				<Panel key={ i } field={ local } setField={ set } isNewField={ isNewField } />
+			</> ) }
+
+			{ 'visibility' === editorTab && ( <>
+
+			<div className="cecfm-card">
+				<div className="cecfm-field-group cecfm-field-group--inline">
+					<label>
+						<input type="checkbox" checked={ !! local.required } onChange={ () => set( 'required', ! local.required ) } />
+						{ ' ' }{ __( 'Required field', 'coderembassy-checkout-fields-manager' ) }
+					</label>
+					<p className="cecfm-setting-desc">{ __( 'Always required regardless of conditions.', 'coderembassy-checkout-fields-manager' ) }</p>
+				</div>
+
+				<div className="cecfm-field-group">
+					<label>{ __( 'Show in order emails', 'coderembassy-checkout-fields-manager' ) }</label>
+					<label className="cecfm-field-group--inline">
+						<input type="checkbox" checked={ metaBool( 'show_in_email' ) } onChange={ ( e ) => setMeta( 'show_in_email', e.target.checked ) } />
+						{ ' ' }{ __( 'Yes — shown in emails', 'coderembassy-checkout-fields-manager' ) }
+					</label>
+					<p className="cecfm-setting-desc">{ __( "Show this field's value in WooCommerce order confirmation and notification emails.", 'coderembassy-checkout-fields-manager' ) }</p>
+				</div>
+
+				<div className="cecfm-field-group">
+					<label>{ __( 'Show on Thank You page', 'coderembassy-checkout-fields-manager' ) }</label>
+					<label className="cecfm-field-group--inline">
+						<input type="checkbox" checked={ metaBool( 'show_on_thankyou' ) } onChange={ ( e ) => setMeta( 'show_on_thankyou', e.target.checked ) } />
+						{ ' ' }{ __( 'Yes — visible on Thank You page', 'coderembassy-checkout-fields-manager' ) }
+					</label>
+				</div>
+
+				<div className="cecfm-field-group">
+					<label>{ __( 'Show on Order Details page', 'coderembassy-checkout-fields-manager' ) }</label>
+					<label className="cecfm-field-group--inline">
+						<input type="checkbox" checked={ metaBool( 'show_on_order_page' ) } onChange={ ( e ) => setMeta( 'show_on_order_page', e.target.checked ) } />
+						{ ' ' }{ __( 'Yes — visible on Order Details', 'coderembassy-checkout-fields-manager' ) }
+					</label>
+				</div>
+
+				<div className="cecfm-field-group">
+					<label>{ __( 'Show in the admin order screen', 'coderembassy-checkout-fields-manager' ) }</label>
+					<label className="cecfm-field-group--inline">
+						<input type="checkbox" checked={ metaBool( 'show_in_admin_order' ) } onChange={ ( e ) => setMeta( 'show_in_admin_order', e.target.checked ) } />
+						{ ' ' }{ __( 'Yes — visible to shop managers', 'coderembassy-checkout-fields-manager' ) }
+					</label>
+				</div>
+
+				<div className="cecfm-field-group">
+					<label>{ __( 'Enable in Blocks checkout', 'coderembassy-checkout-fields-manager' ) }</label>
+					<label className="cecfm-field-group--inline">
+						<input
+							type="checkbox"
+							checked={ !! meta.blocks_enabled }
+							disabled={ ! BLOCKS_SUPPORTED_TYPES.includes( local.type ) }
+							onChange={ ( e ) => setMeta( 'blocks_enabled', e.target.checked ) }
+						/>
+						{ ' ' }{ meta.blocks_enabled
+							? __( 'On — registered with the block checkout', 'coderembassy-checkout-fields-manager' )
+							: __( 'Off — classic checkout only', 'coderembassy-checkout-fields-manager' ) }
+					</label>
+					<p className="cecfm-setting-desc">
+						{ BLOCKS_SUPPORTED_TYPES.includes( local.type )
+							? __( 'Requires "Enable WooCommerce Blocks checkout support" in Settings.', 'coderembassy-checkout-fields-manager' )
+							: __( 'Only text, select, date, radio and checkbox fields can be registered for Blocks.', 'coderembassy-checkout-fields-manager' ) }
+					</p>
+				</div>
+			</div>
+
+			{ getFieldPanels( 'visibility' ).map( ( Panel, i ) => (
+				<Panel key={ `visibility-${ i }` } field={ local } setField={ set } isNewField={ isNewField } isBlockField={ isBlockField } />
+			) ) }
+
+			</> ) }
+
+			{ 'validation' === editorTab && ! isBlockMode && (
+				<div className="cecfm-card">
+					<h3 className="cecfm-card-title">{ __( 'Validation', 'coderembassy-checkout-fields-manager' ) }</h3>
+					<p className="cecfm-setting-desc">{ __( 'Optional validation rules for this field. A hidden field is never validated.', 'coderembassy-checkout-fields-manager' ) }</p>
+
+					<div className="cecfm-field-group cecfm-field-group--inline">
+						<label>
+							<input
+								type="checkbox"
+								checked={ !! rules.email }
+								onChange={ ( e ) => setRule( 'email', e.target.checked ? true : undefined ) }
+							/>
+							{ ' ' }{ __( 'Validate as email address', 'coderembassy-checkout-fields-manager' ) }
+						</label>
+					</div>
+
+					<div className="cecfm-card-grid">
+						<div className="cecfm-field-group">
+							<label htmlFor="cecfm-min-length">{ __( 'Min length', 'coderembassy-checkout-fields-manager' ) }</label>
+							<input
+								id="cecfm-min-length"
+								type="number"
+								min="0"
+								className="cecfm-input"
+								value={ rules.min_length ?? '' }
+								onChange={ ( e ) => setRule( 'min_length', e.target.value ) }
+							/>
+						</div>
+						<div className="cecfm-field-group">
+							<label htmlFor="cecfm-max-length">{ __( 'Max length', 'coderembassy-checkout-fields-manager' ) }</label>
+							<input
+								id="cecfm-max-length"
+								type="number"
+								min="0"
+								className="cecfm-input"
+								value={ rules.max_length ?? '' }
+								onChange={ ( e ) => setRule( 'max_length', e.target.value ) }
+							/>
+						</div>
+						<div className="cecfm-field-group">
+							<label htmlFor="cecfm-min-value">{ __( 'Min numeric value', 'coderembassy-checkout-fields-manager' ) }</label>
+							<input
+								id="cecfm-min-value"
+								type="number"
+								className="cecfm-input"
+								value={ rules.min_value ?? '' }
+								onChange={ ( e ) => setRule( 'min_value', e.target.value ) }
+							/>
+						</div>
+						<div className="cecfm-field-group">
+							<label htmlFor="cecfm-max-value">{ __( 'Max numeric value', 'coderembassy-checkout-fields-manager' ) }</label>
+							<input
+								id="cecfm-max-value"
+								type="number"
+								className="cecfm-input"
+								value={ rules.max_value ?? '' }
+								onChange={ ( e ) => setRule( 'max_value', e.target.value ) }
+							/>
+						</div>
+					</div>
+
+					<div className="cecfm-field-group">
+						<label htmlFor="cecfm-regex">{ __( 'Regex pattern', 'coderembassy-checkout-fields-manager' ) }</label>
+						<input
+							id="cecfm-regex"
+							type="text"
+							className="cecfm-input"
+							value={ rules.regex ?? '' }
+							placeholder="/^[A-Z0-9-]+$/"
+							onChange={ ( e ) => setRule( 'regex', e.target.value, 'string' ) }
+						/>
+						<p className="cecfm-setting-desc">{ __( 'Include the delimiters. An invalid pattern fails the field rather than breaking checkout.', 'coderembassy-checkout-fields-manager' ) }</p>
+					</div>
+				</div>
+			) }
+
+			{ /* A registered tab renders only while it is the active one. */ }
+			{ getFieldTabs().filter( ( tab ) => tab.id === editorTab ).map( ( tab ) => (
+				<tab.render key={ tab.id } field={ local } setField={ set } isNewField={ isNewField } isBlockField={ isBlockField } />
+			) ) }
+
+			{ getFieldPanels( editorTab ).filter( () => ! [ 'basic', 'visibility' ].includes( editorTab ) ).map( ( Panel, i ) => (
+				<Panel key={ i } field={ local } setField={ set } isNewField={ isNewField } isBlockField={ isBlockField } />
 			) ) }
 
 			<div className="cecfm-editor-actions">

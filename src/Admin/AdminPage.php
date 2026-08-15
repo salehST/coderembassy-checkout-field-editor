@@ -36,18 +36,32 @@ class AdminPage {
 			return;
 		}
 
+		// Version the assets by their build output rather than the plugin
+		// version. A rebuilt bundle then always busts the browser cache, where
+		// a hotfix shipped without a version bump would serve stale JS.
+		$asset_file = CECFM_PATH . 'assets/admin/dist/index.asset.php';
+		$asset      = file_exists( $asset_file )
+			? require $asset_file
+			: array(
+				'dependencies' => array( 'wp-element', 'wp-i18n', 'wp-components', 'wp-api-fetch', 'wp-data' ),
+				'version'      => CECFM_VERSION,
+			);
+
+		$css_path    = CECFM_PATH . 'assets/admin/admin.css';
+		$css_version = file_exists( $css_path ) ? (string) filemtime( $css_path ) : CECFM_VERSION;
+
 		\wp_enqueue_style(
 			'cecfm-admin',
 			CECFM_URL . 'assets/admin/admin.css',
 			array(),
-			CECFM_VERSION
+			$css_version
 		);
 
 		\wp_enqueue_script(
 			'cecfm-admin-app',
 			CECFM_URL . 'assets/admin/dist/index.js',
-			array( 'wp-element', 'wp-i18n', 'wp-components', 'wp-api-fetch', 'wp-data' ),
-			CECFM_VERSION,
+			$asset['dependencies'],
+			$asset['version'],
 			true
 		);
 
@@ -114,6 +128,7 @@ class AdminPage {
 				'logo_light'           => CECFM_URL . 'assets/admin/logo-light.png',
 				'logo_dark'            => CECFM_URL . 'assets/admin/logo-dark.png',
 				'version'              => CECFM_VERSION,
+				'script_debug'         => defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG,
 				'preview_mode_enabled' => ! empty( $settings['enable_preview_mode'] ),
 				'countries'            => $allowed_countries,
 				'payment_methods'      => $payment_methods,

@@ -4,7 +4,7 @@ import { __ } from '@wordpress/i18n';
 import { store } from '../../store';
 import { saveSettings } from '../../api/client';
 import Toggle from '../shared/Toggle';
-import { getSettingsPanels } from '../../extensions';
+import { getSettingsPanels, getSettingsTabs } from '../../extensions';
 
 export default function Settings() {
 	const settings             = useSelect( ( s ) => s( store ).getSettings(), [] );
@@ -12,9 +12,20 @@ export default function Settings() {
 	const [ form, setForm ]    = useState( {} );
 	const [ saved, setSaved ]  = useState( false );
 
+	// An add-on can contribute whole tabs. With none registered this screen is
+	// a plain stack of cards, which is all the free plugin needs.
+	const addonTabs = getSettingsTabs();
+	const tabbed    = addonTabs.length > 0;
+
+	const [ activeTab, setActiveTab ] = useState( 'general' );
+
 	useEffect( () => setForm( settings || {} ), [ settings ] );
 
 	const set = ( k, v ) => setForm( ( p ) => ( { ...p, [ k ]: v } ) );
+
+	const panelsFor = ( tab ) => getSettingsPanels( tab ).map( ( Panel, i ) => (
+		<Panel key={ `${ tab }-${ i }` } settings={ form } setSetting={ set } />
+	) );
 
 	const handleSave = async () => {
 		const r = await saveSettings( form );
@@ -23,19 +34,8 @@ export default function Settings() {
 		setTimeout( () => setSaved( false ), 2500 );
 	};
 
-	return (
-		<div>
-			<div className="cecfm-section-header">
-				<div>
-					<h2>{ __( 'Settings', 'coderembassy-checkout-fields-manager' ) }</h2>
-					<p className="cecfm-help-text">{ __( 'Configure global behaviour for Checkout Fields Manager. Changes take effect after saving.', 'coderembassy-checkout-fields-manager' ) }</p>
-				</div>
-				<button type="button" className="cecfm-btn cecfm-btn--primary" onClick={ handleSave }>
-					{ saved ? __( '✓ Saved', 'coderembassy-checkout-fields-manager' ) : __( 'Save Settings', 'coderembassy-checkout-fields-manager' ) }
-				</button>
-			</div>
-
-			<div className="cecfm-card">
+	const generalCard = (
+		<div className="cecfm-card">
 				<h3 className="cecfm-card-title">{ __( 'General', 'coderembassy-checkout-fields-manager' ) }</h3>
 				<div className="cecfm-settings-row">
 					<Toggle
@@ -77,9 +77,11 @@ export default function Settings() {
 					/>
 					<p className="cecfm-setting-desc">{ __( 'Display "(optional)" next to the label of non-required custom fields on the checkout page. Disable to keep labels clean.', 'coderembassy-checkout-fields-manager' ) }</p>
 				</div>
-			</div>
+		</div>
+	);
 
-			<div className="cecfm-card">
+	const advancedCard = (
+		<div className="cecfm-card">
 				<h3 className="cecfm-card-title">{ __( 'Advanced', 'coderembassy-checkout-fields-manager' ) }</h3>
 				<div className="cecfm-settings-row">
 					<Toggle
@@ -89,9 +91,11 @@ export default function Settings() {
 					/>
 					<p className="cecfm-setting-desc">{ __( 'Write field validation errors to the WordPress debug log.', 'coderembassy-checkout-fields-manager' ) }</p>
 				</div>
-			</div>
+		</div>
+	);
 
-			<div className="cecfm-card">
+	const cssCard = (
+		<div className="cecfm-card">
 				<h3 className="cecfm-card-title">{ __( 'Custom CSS', 'coderembassy-checkout-fields-manager' ) }</h3>
 				<p className="cecfm-setting-desc">{ __( 'Add custom CSS that will be loaded on the checkout page alongside your custom fields.', 'coderembassy-checkout-fields-manager' ) }</p>
 				<textarea
@@ -101,12 +105,81 @@ export default function Settings() {
 					placeholder="/* your custom styles */"
 					onChange={ ( e ) => set( 'custom_css', e.target.value ) }
 				/>
+		</div>
+	);
+
+	// The add-on's tabs sit between General and the two housekeeping tabs, which
+	// is the order the standalone Pro plugin used.
+	const tabs = [
+		{ id: 'general', label: __( 'General', 'coderembassy-checkout-fields-manager' ) },
+		...addonTabs.map( ( t ) => ( { id: t.id, label: t.label } ) ),
+		{ id: 'advanced', label: __( 'Advanced', 'coderembassy-checkout-fields-manager' ) },
+		{ id: 'custom_css', label: __( 'Custom CSS', 'coderembassy-checkout-fields-manager' ) },
+	];
+
+	const renderActiveTab = () => {
+		if ( 'general' === activeTab ) {
+			return <>{ generalCard }{ panelsFor( 'general' ) }</>;
+		}
+		if ( 'advanced' === activeTab ) {
+			return <>{ advancedCard }{ panelsFor( 'advanced' ) }</>;
+		}
+		if ( 'custom_css' === activeTab ) {
+			return <>{ cssCard }{ panelsFor( 'custom_css' ) }</>;
+		}
+
+		const addon = addonTabs.find( ( t ) => t.id === activeTab );
+
+		return addon
+			? <>
+				<addon.render settings={ form } setSetting={ set } />
+				{ panelsFor( addon.id ) }
+			</>
+			: null;
+	};
+
+	return (
+		<div>
+			<div className="cecfm-section-header">
+				<div>
+					<h2>{ __( 'Settings', 'coderembassy-checkout-fields-manager' ) }</h2>
+					<p className="cecfm-help-text">{ __( 'Configure global behaviour for Checkout Fields Manager. Changes take effect after saving.', 'coderembassy-checkout-fields-manager' ) }</p>
+				</div>
+				<button type="button" className="cecfm-btn cecfm-btn--primary" onClick={ handleSave }>
+					{ saved ? __( '✓ Saved', 'coderembassy-checkout-fields-manager' ) : __( 'Save Settings', 'coderembassy-checkout-fields-manager' ) }
+				</button>
 			</div>
 
-			{ /* Add-on settings cards, after the core ones. */ }
-			{ getSettingsPanels().map( ( Panel, i ) => (
-				<Panel key={ i } settings={ form } setSetting={ set } />
-			) ) }
+			{ ! tabbed && (
+				<>
+					{ generalCard }
+					{ advancedCard }
+					{ cssCard }
+					{ getSettingsPanels().map( ( Panel, i ) => (
+						<Panel key={ i } settings={ form } setSetting={ set } />
+					) ) }
+				</>
+			) }
+
+			{ tabbed && (
+				<>
+					<div className="cecfm-settings-tabs" role="tablist">
+						{ tabs.map( ( t ) => (
+							<button
+								key={ t.id }
+								type="button"
+								role="tab"
+								aria-selected={ activeTab === t.id }
+								className={ `cecfm-settings-tab${ activeTab === t.id ? ' is-active' : '' }` }
+								onClick={ () => setActiveTab( t.id ) }
+							>
+								{ t.label }
+							</button>
+						) ) }
+					</div>
+					{ renderActiveTab() }
+				</>
+			) }
 		</div>
 	);
 }
